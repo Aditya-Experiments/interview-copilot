@@ -1,13 +1,28 @@
 # Real-Time Interview Copilot
 
-An AI-powered cross-platform desktop application (Windows, macOS, Linux) that acts as a real-time interview assistant. The app listens to live interview audio, transcribes speech using OpenAI Whisper, detects questions using smart linguistic heuristics, and generates concise, speakable answers using OpenAI GPT-4.
+An AI-powered cross-platform desktop application (Windows, macOS, Linux) that acts as a real-time interview assistant. The app listens to live interview audio, transcribes speech, detects questions using smart linguistic heuristics, and generates concise, speakable answers using Google Gemini 3.1 Flash Lite (Free) or OpenAI.
+
+[![Download Latest Release](https://img.shields.io/github/v/release/Aditya-Experiments/interview-copilot?label=Download%20Latest%20Release&color=blue)](https://github.com/Aditya-Experiments/interview-copilot/releases/latest)
+
+---
+
+## ⬇️ Download & Install
+
+Download pre-built installers directly from the **[Latest Releases](https://github.com/Aditya-Experiments/interview-copilot/releases/latest)**:
+
+| Platform | Download | Format |
+|---|---|---|
+| 🍎 **macOS (Apple Silicon)** | [Download .dmg](https://github.com/Aditya-Experiments/interview-copilot/releases/latest) | `.dmg` installer or `.zip` |
+| 🪟 **Windows (x64)** | [Download .exe](https://github.com/Aditya-Experiments/interview-copilot/releases/latest) | Setup installer `.exe` |
+| 🐧 **Linux (x64)** | [Download AppImage](https://github.com/Aditya-Experiments/interview-copilot/releases/latest) | `.AppImage` / `.deb` |
 
 ---
 
 ## 🌟 Features
 
-- 🎤 **Real-Time Speech Recognition** — Captures microphone or system audio and transcribes in real-time via OpenAI Whisper.
-- 📸 **Screenshot Analysis** — Captures active interview/coding windows and analyzes LeetCode/System Design problems via OpenAI Vision API (GPT-4o).
+- ⚡ **Google Gemini 3.1 Flash Lite** — 100% Free AI tier for real-time answers, speech transcription, and screenshot problem analysis.
+- 🎤 **Real-Time Speech Recognition** — Captures microphone or system audio and transcribes in real-time.
+- 📸 **Screenshot Analysis** — Captures active interview/coding windows and analyzes LeetCode/System Design problems.
 - 🤖 **AI-Powered Answer Generation** — Generates concise, natural, human-like answers tailored for verbal responses.
 - 🔒 **Screen Share Protection** — Automatically hidden from screen recording & video calls (Zoom, Microsoft Teams, Google Meet).
 - ⚡ **Lightweight & Fast** — Optimized bundle size with minimal startup latency and low memory footprint.
@@ -22,19 +37,19 @@ An AI-powered cross-platform desktop application (Windows, macOS, Linux) that ac
 - **Framework**: [Electron](https://www.electronjs.org/) + [electron-vite](https://electron-vite.org/)
 - **Frontend**: [React 19](https://react.dev/), [TypeScript](https://www.typescriptlang.org/), [Tailwind CSS](https://tailwindcss.com/)
 - **State Management**: [Zustand](https://github.com/pmndrs/zustand)
-- **Package Manager**: [npm](https://www.npmjs.com/)
-- **AI Integrations**: [OpenAI Node SDK](https://github.com/openai/openai-node) (Whisper API & GPT-4o)
+- **Package Manager**: [pnpm](https://pnpm.io/)
+- **AI Integrations**: Google GenAI SDK (`@google/genai`) & OpenAI Node SDK (`openai`)
 - **Icons & Markdown**: Lucide React, React Markdown & Prism Light Syntax Highlighter
 
 ---
 
 ## 📋 Prerequisites
 
-Before running the application, ensure you have:
+Before running from source, ensure you have:
 
 1. **Node.js**: v18.0.0 or higher ([Download Node.js](https://nodejs.org/))
-2. **npm**: Package manager (included with Node.js)
-3. **OpenAI API Key**: Obtain from [OpenAI API Keys](https://platform.openai.com/api-keys)
+2. **pnpm**: Package manager (`npm install -g pnpm`)
+3. **Google Gemini API Key** (Free from [Google AI Studio](https://aistudio.google.com/)) or OpenAI API Key
 
 ---
 
@@ -44,11 +59,11 @@ Before running the application, ensure you have:
 
 ```bash
 # Clone the repository
-git clone https://github.com/elias-soykat/interview-copilot.git
+git clone https://github.com/Aditya-Experiments/interview-copilot.git
 cd interview-copilot
 
-# Install dependencies using npm
-npm install
+# Install dependencies
+pnpm install
 ```
 
 ### 2. Development
