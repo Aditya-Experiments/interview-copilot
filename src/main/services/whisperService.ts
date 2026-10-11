@@ -1,6 +1,7 @@
 import { EventEmitter } from 'events'
 import * as fs from 'fs'
 import OpenAI from 'openai'
+import { GoogleGenAI } from '@google/genai'
 import * as os from 'os'
 import * as path from 'path'
 
@@ -17,7 +18,7 @@ export interface WhisperConfig {
 }
 
 export class WhisperService extends EventEmitter {
-  private client: OpenAI
+  private client: OpenAI | null = null
   private config: WhisperConfig
   private audioBuffer: Buffer[] = []
   private isProcessing = false
@@ -33,7 +34,10 @@ export class WhisperService extends EventEmitter {
   constructor(config: WhisperConfig) {
     super()
     this.config = config
-    this.client = new OpenAI({ apiKey: config.apiKey })
+    const isGemini = !config.apiKey?.trim().startsWith('sk-')
+    if (!isGemini) {
+      this.client = new OpenAI({ apiKey: config.apiKey })
+    }
   }
 
   start(): void {
@@ -146,24 +150,69 @@ export class WhisperService extends EventEmitter {
       // Create WAV file from raw PCM data
       const wavBuffer = this.createWavBuffer(combinedBuffer)
 
-      // Write to temp file (OpenAI API requires a file)
-      const tempFile = path.join(os.tmpdir(), `whisper_${Date.now()}.wav`)
-      fs.writeFileSync(tempFile, wavBuffer)
+      let text = ''
+      const isGemini =
+        !this.config.apiKey?.trim().startsWith('sk-') ||
+        (this.config.model && this.config.model.toLowerCase().includes('gemini'))
 
-      console.log(`===> Sending ${(durationMs / 1000).toFixed(2)}s of audio to Whisper...`)
+      if (isGemini) {
+        console.log(`===> Sending ${(durationMs / 1000).toFixed(2)}s of audio to Gemini Audio API...`)
+        const ai = new GoogleGenAI({ apiKey: this.config.apiKey?.trim() })
+        const parts = [
+          {
+            inlineData: {
+              mimeType: 'audio/wav',
+              data: wavBuffer.toString('base64')
+            }
+          },
+          {
+            text: 'Transcribe this spoken audio verbatim into English. Output only the exact transcribed speech text. If there is only silence, background noise, or no clear speech, output nothing.'
+          }
+        ]
 
-      // Send to Whisper API
-      const transcription = await this.client.audio.transcriptions.create({
-        file: fs.createReadStream(tempFile),
-        model: this.config.model || 'whisper-1',
-        language: this.config.language || 'en',
-        response_format: 'json'
-      })
+        let response
+        try {
+          response = await ai.models.generateContent({
+            model: 'gemini-3.1-flash-lite',
+            contents: [{ role: 'user', parts }],
+            config: { temperature: 0.0 }
+          })
+        } catch {
+          // Fallback to gemini-3.5-flash-lite
+          response = await ai.models.generateContent({
+            model: 'gemini-3.5-flash-lite',
+            contents: [{ role: 'user', parts }],
+            config: { temperature: 0.0 }
+          })
+        }
 
-      // Clean up temp file
-      fs.unlinkSync(tempFile)
+        text = response.text?.trim() || ''
+      } else {
+        if (!this.client) {
+          throw new Error('OpenAI client not initialized')
+        }
 
-      const text = transcription.text?.trim()
+        // Write to temp file (OpenAI API requires a file)
+        const tempFile = path.join(os.tmpdir(), `whisper_${Date.now()}.wav`)
+        fs.writeFileSync(tempFile, wavBuffer)
+
+        console.log(`===> Sending ${(durationMs / 1000).toFixed(2)}s of audio to Whisper...`)
+
+        // Send to Whisper API
+        const transcription = await this.client.audio.transcriptions.create({
+          file: fs.createReadStream(tempFile),
+          model: this.config.model || 'whisper-1',
+          language: this.config.language || 'en',
+          response_format: 'json'
+        })
+
+        // Clean up temp file
+        if (fs.existsSync(tempFile)) {
+          fs.unlinkSync(tempFile)
+        }
+
+        text = transcription.text?.trim() || ''
+      }
 
       if (text && text.length > 0) {
         // Filter out common noise transcriptions

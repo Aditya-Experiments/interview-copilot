@@ -8,12 +8,12 @@ interface ModelOption {
 }
 
 const DEFAULT_MODELS: ModelOption[] = [
-  { id: 'gpt-4o-mini', name: 'GPT-4o Mini (Default)' },
-  { id: 'gpt-4o', name: 'GPT-4o' },
-  { id: 'gpt-4-turbo', name: 'GPT-4 Turbo' },
-  { id: 'gpt-3.5-turbo', name: 'GPT-3.5 Turbo' },
-  { id: 'o1-mini', name: 'o1-mini' },
-  { id: 'o3-mini', name: 'o3-mini' }
+  { id: 'gemini-3.1-flash-lite', name: 'Gemini 3.1 Flash Lite (Recommended & Free)' },
+  { id: 'gemini-3.5-flash-lite', name: 'Gemini 3.5 Flash Lite (Free)' },
+  { id: 'gemini-3.5-flash', name: 'Gemini 3.5 Flash (Free)' },
+  { id: 'gemini-3.8-flash', name: 'Gemini 3.8 Flash (Free)' },
+  { id: 'gpt-4o-mini', name: 'GPT-4o Mini (OpenAI)' },
+  { id: 'gpt-4o', name: 'GPT-4o (OpenAI)' }
 ]
 
 export function SettingsModal(): React.ReactNode | null {
@@ -100,7 +100,7 @@ export function SettingsModal(): React.ReactNode | null {
       setSaveStatus('saving')
       const updatedLocalSettings = {
         ...localSettings,
-        openaiModel: localSettings.openaiModel || 'gpt-4o-mini'
+        openaiModel: localSettings.openaiModel || 'gemini-3.1-flash-lite'
       }
       const updatedSettings = await window.api.updateSettings(updatedLocalSettings)
       setSettings(updatedSettings as AppSettings)
@@ -147,21 +147,25 @@ export function SettingsModal(): React.ReactNode | null {
 
         {/* Content */}
         <div className="px-5 py-6 space-y-5 max-h-[32rem] overflow-y-auto custom-scrollbar">
-          {/* OpenAI API Key */}
+          {/* API Key */}
           <div className="space-y-2">
-            <label className="block text-sm font-medium text-dark-200">
-              OpenAI API Key
-              <a
-                href="https://platform.openai.com/api-keys"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="ml-2 text-xs text-blue-400 hover:underline"
-              >
-                Get key →
-              </a>
-            </label>
+            <div className="flex items-center justify-between">
+              <label className="block text-sm font-medium text-dark-200">
+                API Key (Gemini / OpenAI)
+              </label>
+              <div className="flex items-center gap-2">
+                <a
+                  href="https://aistudio.google.com/app/apikey"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-xs text-green-400 hover:underline font-medium"
+                >
+                  Get Free Gemini Key →
+                </a>
+              </div>
+            </div>
             <p className="text-xs text-dark-500">
-              Used for both speech-to-text and answer generation
+              Use a free Google Gemini key (<code className="text-dark-300">AIza... / AQ...</code>) or OpenAI key. Google AI Studio has a 100% free tier.
             </p>
             <div className="relative">
               <input
@@ -170,7 +174,7 @@ export function SettingsModal(): React.ReactNode | null {
                 onChange={(e) =>
                   setLocalSettings({ ...localSettings, openaiApiKey: e.target.value })
                 }
-                placeholder="Enter your OpenAI API key"
+                placeholder="Enter Gemini key (AIza... / AQ...) or OpenAI key (sk-...)"
                 className="w-full px-3 py-2 pr-10 bg-dark-800 border border-dark-600 rounded-lg text-sm text-dark-100 placeholder-dark-500 focus:outline-none focus:border-blue-500 transition-colors"
               />
               <button
@@ -183,7 +187,7 @@ export function SettingsModal(): React.ReactNode | null {
             </div>
           </div>
 
-          {/* OpenAI Model */}
+          {/* Model */}
           <div className="space-y-2">
             <label className="block text-sm font-medium text-dark-200">
               Answer Generation Model
@@ -198,7 +202,7 @@ export function SettingsModal(): React.ReactNode | null {
             ) : (
               <div className="space-y-1">
                 <select
-                  value={localSettings.openaiModel || 'gpt-4o-mini'}
+                  value={localSettings.openaiModel || 'gemini-3.1-flash-lite'}
                   onChange={(e) =>
                     setLocalSettings({ ...localSettings, openaiModel: e.target.value })
                   }
@@ -221,8 +225,7 @@ export function SettingsModal(): React.ReactNode | null {
                   </div>
                 ) : !localSettings.openaiApiKey?.trim() ? (
                   <p className="text-xs text-dark-500">
-                    Default models shown. Enter an API key to load all models from your OpenAI
-                    account.
+                    Default models shown. Gemini 3.1 Flash Lite recommended for fast free responses.
                   </p>
                 ) : null}
               </div>

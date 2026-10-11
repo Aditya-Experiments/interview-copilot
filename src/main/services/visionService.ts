@@ -1,4 +1,5 @@
 import OpenAI from 'openai'
+import { GoogleGenAI } from '@google/genai'
 
 export interface VisionAnalysisResult {
   isQuestion: boolean
@@ -13,17 +14,20 @@ export interface VisionServiceConfig {
 }
 
 /**
- * Service to analyze screenshots for interview questions using OpenAI Vision API
+ * Service to analyze screenshots for interview questions using OpenAI / Gemini Vision API
  */
 export class VisionService {
-  private client: OpenAI
+  private client: OpenAI | null = null
   private config: VisionServiceConfig
 
   constructor(config: VisionServiceConfig) {
     this.config = config
-    this.client = new OpenAI({
-      apiKey: config.apiKey
-    })
+    const isGemini = !config.apiKey?.trim().startsWith('sk-')
+    if (!isGemini) {
+      this.client = new OpenAI({
+        apiKey: config.apiKey
+      })
+    }
   }
 
   /**
@@ -35,13 +39,13 @@ export class VisionService {
     try {
       // Remove data URL prefix if present
       const base64Data = imageBase64.includes(',') ? imageBase64.split(',')[1] : imageBase64
+      const isGemini = !this.config.apiKey?.trim().startsWith('sk-')
 
-      const response = await this.client.chat.completions.create({
-        model: this.config.model || 'gpt-4o',
-        messages: [
-          {
-            role: 'system',
-            content: `You are an expert at analyzing screenshots to detect interview questions. 
+      let content = ''
+
+      if (isGemini) {
+        const ai = new GoogleGenAI({ apiKey: this.config.apiKey?.trim() })
+        const systemPrompt = `You are an expert at analyzing screenshots to detect interview questions. 
 Your task is to determine if the screenshot contains:
 1. A LeetCode coding problem (algorithm/data structure questions, programming challenges)
 2. A system design problem (architecture, scalability, distributed systems, design questions)
@@ -58,13 +62,74 @@ You MUST respond ONLY with valid JSON in this exact format:
 }
 
 If you see any coding problem, algorithm, or technical question, set isQuestion to true and extract the question text.`
-          },
-          {
-            role: 'user',
-            content: [
-              {
-                type: 'text',
-                text: `Analyze this screenshot carefully. Look for:
+
+        const requestPayload = {
+          contents: [
+            {
+              role: 'user',
+              parts: [
+                {
+                  text: `${systemPrompt}\n\nAnalyze this screenshot carefully. Look for coding problems, algorithms, system design, or technical interview questions.`
+                },
+                {
+                  inlineData: {
+                    mimeType: 'image/png',
+                    data: base64Data
+                  }
+                }
+              ]
+            }
+          ],
+          config: {
+            responseMimeType: 'application/json',
+            temperature: 0.2
+          }
+        }
+
+        let response
+        try {
+          response = await ai.models.generateContent({
+            model: 'gemini-3.1-flash-lite',
+            ...requestPayload
+          })
+        } catch {
+          response = await ai.models.generateContent({
+            model: 'gemini-3.5-flash-lite',
+            ...requestPayload
+          })
+        }
+
+        content = response.text || ''
+      } else {
+        const response = await this.client!.chat.completions.create({
+          model: this.config.model || 'gpt-4o',
+          messages: [
+            {
+              role: 'system',
+              content: `You are an expert at analyzing screenshots to detect interview questions. 
+Your task is to determine if the screenshot contains:
+1. A LeetCode coding problem (algorithm/data structure questions, programming challenges)
+2. A system design problem (architecture, scalability, distributed systems, design questions)
+3. Any other technical interview question (coding, algorithms, data structures, technical problems)
+
+IMPORTANT: Be lenient in detection. If you see ANY coding problem, algorithm question, programming challenge, or technical problem, consider it an interview question.
+
+You MUST respond ONLY with valid JSON in this exact format:
+{
+  "isQuestion": true/false,
+  "questionText": "full question text if detected, otherwise empty string",
+  "questionType": "leetcode" | "system-design" | "other",
+  "confidence": 0.0-1.0
+}
+
+If you see any coding problem, algorithm, or technical question, set isQuestion to true and extract the question text.`
+            },
+            {
+              role: 'user',
+              content: [
+                {
+                  type: 'text',
+                  text: `Analyze this screenshot carefully. Look for:
 - Coding problems or programming challenges
 - Algorithm questions
 - Data structure problems  
@@ -72,22 +137,23 @@ If you see any coding problem, algorithm, or technical question, set isQuestion 
 - Any technical interview questions
 
 If you find ANY of these, respond with JSON where isQuestion=true and include the full question text. Be thorough - extract all visible text that appears to be a question or problem statement.`
-              },
-              {
-                type: 'image_url',
-                image_url: {
-                  url: `data:image/png;base64,${base64Data}`
+                },
+                {
+                  type: 'image_url',
+                  image_url: {
+                    url: `data:image/png;base64,${base64Data}`
+                  }
                 }
-              }
-            ]
-          }
-        ],
-        max_completion_tokens: 1000,
-        temperature: 0.2,
-        response_format: { type: 'json_object' }
-      })
+              ]
+            }
+          ],
+          max_completion_tokens: 1000,
+          temperature: 0.2,
+          response_format: { type: 'json_object' }
+        })
 
-      const content = response.choices[0]?.message?.content
+        content = response.choices[0]?.message?.content || ''
+      }
       if (!content) {
         console.log('Vision API returned empty content')
         return {

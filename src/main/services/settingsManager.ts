@@ -22,8 +22,13 @@ const getEnvApiKey = (key: string): string => {
 }
 
 const DEFAULT_SETTINGS: AppSettings = {
-  openaiApiKey: getEnvApiKey('OPENAI_API_KEY'),
-  openaiModel: process.env.OPENAI_MODEL || process.env.VITE_OPENAI_MODEL || 'gpt-4o-mini',
+  openaiApiKey: getEnvApiKey('GEMINI_API_KEY') || getEnvApiKey('OPENAI_API_KEY'),
+  openaiModel:
+    process.env.GEMINI_MODEL ||
+    process.env.VITE_GEMINI_MODEL ||
+    process.env.OPENAI_MODEL ||
+    process.env.VITE_OPENAI_MODEL ||
+    'gemini-3.1-flash-lite',
   alwaysOnTop: true,
   windowOpacity: 1.0,
   pauseThreshold: 1500,
@@ -61,7 +66,12 @@ export class SettingsManager {
           }
         }
 
-        return { ...DEFAULT_SETTINGS, ...savedSettings }
+        const loaded = { ...DEFAULT_SETTINGS, ...savedSettings }
+        // Automatically migrate deprecated models (e.g. 2.0 or discontinued 2.5)
+        if (loaded.openaiModel && (loaded.openaiModel.includes('2.0') || loaded.openaiModel === 'gemini-2.5-flash')) {
+          loaded.openaiModel = 'gemini-3.1-flash-lite'
+        }
+        return loaded
       }
     } catch (error) {
       console.error('Failed to load settings:', error)
