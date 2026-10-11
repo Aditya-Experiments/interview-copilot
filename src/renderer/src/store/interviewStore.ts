@@ -91,7 +91,7 @@ interface InterviewState {
 
 const DEFAULT_SETTINGS: AppSettings = {
   openaiApiKey: '',
-  openaiModel: 'gpt-4o-mini',
+  openaiModel: 'gemini-3.1-flash-lite',
   alwaysOnTop: true,
   windowOpacity: 1.0,
   pauseThreshold: 1500,

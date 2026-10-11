@@ -32,6 +32,18 @@ export function initializeIpcHandlers(window: BrowserWindow): void {
   ipcMain.handle('update-settings', (_event, updates: Partial<AppSettings>) => {
     settingsManager?.updateSettings(updates)
 
+    // Reset vision service and update openai service if API key or model changed
+    if (updates.openaiApiKey !== undefined || updates.openaiModel !== undefined) {
+      visionService = null
+      if (openaiService) {
+        openaiService.updateConfig({
+          apiKey: updates.openaiApiKey,
+          model: updates.openaiModel,
+          resumeDescription: updates.resumeDescription
+        })
+      }
+    }
+
     // Apply window settings immediately
     if (updates.alwaysOnTop !== undefined && mainWindow) {
       mainWindow.setAlwaysOnTop(updates.alwaysOnTop)
@@ -47,15 +59,61 @@ export function initializeIpcHandlers(window: BrowserWindow): void {
     return settingsManager?.hasApiKeys()
   })
 
-  // Fetch OpenAI models
+  // Fetch AI models (Gemini & OpenAI)
   ipcMain.handle('fetch-openai-models', async (_event, apiKey: string) => {
     try {
       if (!apiKey || apiKey.trim().length === 0) {
         throw new Error('API key is required')
       }
 
+      const trimmedKey = apiKey.trim()
+
+      // Handle Google Gemini API Keys (both legacy AIza and new AQ. auth keys)
+      if (!trimmedKey.startsWith('sk-')) {
+        const defaultGeminiModels = [
+          { id: 'gemini-3.1-flash-lite', name: 'Gemini 3.1 Flash Lite (Recommended & Free)' },
+          { id: 'gemini-3.5-flash-lite', name: 'Gemini 3.5 Flash Lite (Free)' },
+          { id: 'gemini-3.5-flash', name: 'Gemini 3.5 Flash (Free)' },
+          { id: 'gemini-3.8-flash', name: 'Gemini 3.8 Flash (Free)' }
+        ]
+
+        try {
+          const resp = await fetch(
+            `https://generativelanguage.googleapis.com/v1beta/models?key=${trimmedKey}`
+          )
+          if (resp.ok) {
+            const data = (await resp.json()) as {
+              models?: Array<{ name: string; displayName?: string; supportedGenerationMethods?: string[] }>
+            }
+            if (data.models && data.models.length > 0) {
+              const fetched = data.models
+                .filter((m) => m.name.includes('gemini') && m.supportedGenerationMethods?.includes('generateContent'))
+                .map((m) => {
+                  const id = m.name.replace('models/', '')
+                  return { id, name: m.displayName ? `${m.displayName} (${id})` : id }
+                })
+              if (fetched.length > 0) {
+                // Filter out deprecated models and place gemini-3.1-flash-lite first
+                const valid = fetched.filter((m) => !m.id.includes('2.0') && m.id !== 'gemini-2.5-flash')
+                const without31 = valid.filter((m) => m.id !== 'gemini-3.1-flash-lite')
+                const combined = [
+                  { id: 'gemini-3.1-flash-lite', name: 'Gemini 3.1 Flash Lite (Recommended & Free)' },
+                  ...without31
+                ]
+                return { success: true, models: combined }
+              }
+            }
+          }
+        } catch {
+          // Fall back to predefined list if network/parsing error
+        }
+
+        return { success: true, models: defaultGeminiModels }
+      }
+
+      // Handle OpenAI API Keys
       const OpenAI = (await import('openai')).default
-      const client = new OpenAI({ apiKey })
+      const client = new OpenAI({ apiKey: trimmedKey })
 
       const response = await client.models.list()
 
@@ -68,7 +126,7 @@ export function initializeIpcHandlers(window: BrowserWindow): void {
       return { success: true, models: chatModels }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Failed to fetch models'
-      console.error('Error fetching OpenAI models:', errorMessage)
+      console.error('Error fetching AI models:', errorMessage)
       return { success: false, error: errorMessage, models: [] }
     }
   })
@@ -79,11 +137,11 @@ export function initializeIpcHandlers(window: BrowserWindow): void {
 
     // Debug: Log API key status (not the actual keys)
     console.log('API Keys configured:', {
-      openai: settings?.openaiApiKey ? `Yes (${settings.openaiApiKey.length} chars)` : 'No'
+      configured: settings?.openaiApiKey ? `Yes (${settings.openaiApiKey.length} chars)` : 'No'
     })
 
     if (!settings?.openaiApiKey) {
-      throw new Error('OpenAI API key not configured. Please add it in Settings.')
+      throw new Error('API key not configured. Please add your Gemini or OpenAI API key in Settings.')
     }
 
     try {
@@ -362,7 +420,7 @@ export function initializeIpcHandlers(window: BrowserWindow): void {
     if (!settings?.openaiApiKey) {
       return {
         success: false,
-        error: 'OpenAI API key not configured. Please add it in Settings.'
+        error: 'API key not configured. Please add your Gemini or OpenAI API key in Settings.'
       }
     }
 

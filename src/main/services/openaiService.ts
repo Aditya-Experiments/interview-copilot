@@ -1,5 +1,6 @@
 import { EventEmitter } from 'events'
 import OpenAI from 'openai'
+import { GoogleGenAI } from '@google/genai'
 
 export interface Message {
   role: 'system' | 'user' | 'assistant'
@@ -181,14 +182,18 @@ export class OpenAIService extends EventEmitter {
   constructor(config: OpenAIConfig) {
     super()
     this.config = config
+    const apiKeyTrimmed = config.apiKey?.trim() || ''
+    const isGemini = !apiKeyTrimmed.startsWith('sk-')
     this.client = new OpenAI({
-      apiKey: config.apiKey
+      apiKey: config.apiKey,
+      baseURL: isGemini ? 'https://generativelanguage.googleapis.com/v1beta/openai/' : undefined
     })
     this.systemPrompt = getSystemPrompt(config.resumeDescription || '')
   }
 
   async generateAnswer(question: string): Promise<string> {
-    if (!this.client) {
+    const isGemini = !this.config.apiKey?.trim().startsWith('sk-')
+    if (!isGemini && !this.client) {
       throw new Error('OpenAI client not initialized')
     }
 
@@ -203,27 +208,71 @@ export class OpenAIService extends EventEmitter {
       this.conversationHistory = this.conversationHistory.slice(-this.maxHistoryLength)
     }
 
-    const messages: Message[] = [
-      { role: 'system', content: this.systemPrompt },
-      ...this.conversationHistory
-    ]
-
     try {
       let fullResponse = ''
 
-      const stream = await this.client.chat.completions.create({
-        model: this.config.model || 'gpt-4o-mini',
-        messages: messages,
-        max_completion_tokens: this.config.maxTokens || 500,
-        temperature: this.config.temperature || 0.7,
-        stream: true
-      })
+      if (isGemini) {
+        let model = this.config.model || 'gemini-3.1-flash-lite'
+        // Remap any deprecated model names to current equivalents
+        if (model.includes('2.0')) {
+          model = 'gemini-3.1-flash-lite'
+        }
+        const ai = new GoogleGenAI({ apiKey: this.config.apiKey?.trim() })
+        const contents = this.conversationHistory.map((msg) => ({
+          role: msg.role === 'assistant' ? 'model' : 'user',
+          parts: [{ text: msg.content }]
+        }))
 
-      for await (const chunk of stream) {
-        const content = chunk.choices[0]?.delta?.content || ''
-        if (content) {
-          fullResponse += content
-          this.emit('stream', content)
+        let stream
+        try {
+          stream = await ai.models.generateContentStream({
+            model: model,
+            contents: contents,
+            config: {
+              systemInstruction: this.systemPrompt,
+              maxOutputTokens: this.config.maxTokens || 500,
+              temperature: this.config.temperature || 0.7
+            }
+          })
+        } catch {
+          stream = await ai.models.generateContentStream({
+            model: 'gemini-3.1-flash-lite',
+            contents: contents,
+            config: {
+              systemInstruction: this.systemPrompt,
+              maxOutputTokens: this.config.maxTokens || 500,
+              temperature: this.config.temperature || 0.7
+            }
+          })
+        }
+
+        for await (const chunk of stream) {
+          const content = chunk.text || ''
+          if (content) {
+            fullResponse += content
+            this.emit('stream', content)
+          }
+        }
+      } else {
+        const messages: Message[] = [
+          { role: 'system', content: this.systemPrompt },
+          ...this.conversationHistory
+        ]
+
+        const stream = await this.client!.chat.completions.create({
+          model: this.config.model || 'gpt-4o-mini',
+          messages: messages,
+          max_completion_tokens: this.config.maxTokens || 500,
+          temperature: this.config.temperature || 0.7,
+          stream: true
+        })
+
+        for await (const chunk of stream) {
+          const content = chunk.choices[0]?.delta?.content || ''
+          if (content) {
+            fullResponse += content
+            this.emit('stream', content)
+          }
         }
       }
 
@@ -257,7 +306,8 @@ export class OpenAIService extends EventEmitter {
     questionText?: string,
     questionType?: 'leetcode' | 'system-design' | 'other'
   ): Promise<string> {
-    if (!this.client) {
+    const isGemini = !this.config.apiKey?.trim().startsWith('sk-')
+    if (!isGemini && !this.client) {
       throw new Error('OpenAI client not initialized')
     }
 
@@ -266,16 +316,14 @@ export class OpenAIService extends EventEmitter {
 
     const solutionPrompt = getSolutionSystemPrompt(questionType)
 
-    const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
-      { role: 'system', content: solutionPrompt },
-      {
-        role: 'user',
-        content: [
-          {
-            type: 'text',
-            text: questionText
-              ? `Here is the interview question: "${questionText}"\n\nProvide a detailed step-by-step solution with code examples:`
-              : `Analyze this screenshot carefully. Extract the interview question/problem statement from the image, then provide a detailed step-by-step solution with code examples.
+    try {
+      let fullResponse = ''
+
+      if (isGemini) {
+        const ai = new GoogleGenAI({ apiKey: this.config.apiKey?.trim() })
+        const promptText = questionText
+          ? `Here is the interview question: "${questionText}"\n\nProvide a detailed step-by-step solution with code examples:`
+          : `Analyze this screenshot carefully. Extract the interview question/problem statement from the image, then provide a detailed step-by-step solution with code examples.
 
 First, identify what the question is asking, then provide:
 - Problem understanding
@@ -283,37 +331,97 @@ First, identify what the question is asking, then provide:
 - Step-by-step solution
 - Code implementation with comments
 - Complexity analysis`
-          },
-          {
-            type: 'image_url',
-            image_url: {
-              url: `data:image/png;base64,${base64Data}`
+
+        const payload = {
+          contents: [
+            {
+              role: 'user',
+              parts: [
+                { text: promptText },
+                {
+                  inlineData: {
+                    mimeType: 'image/png',
+                    data: base64Data
+                  }
+                }
+              ]
             }
+          ],
+          config: {
+            systemInstruction: solutionPrompt,
+            maxOutputTokens: this.config.maxTokens || 2000,
+            temperature: this.config.temperature || 0.7
+          }
+        }
+
+        let stream
+        try {
+          stream = await ai.models.generateContentStream({
+            model: 'gemini-3.1-flash-lite',
+            ...payload
+          })
+        } catch {
+          stream = await ai.models.generateContentStream({
+            model: 'gemini-3.5-flash-lite',
+            ...payload
+          })
+        }
+
+        for await (const chunk of stream) {
+          const content = chunk.text || ''
+          if (content) {
+            fullResponse += content
+            this.emit('stream', content)
+          }
+        }
+      } else {
+        const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
+          { role: 'system', content: solutionPrompt },
+          {
+            role: 'user',
+            content: [
+              {
+                type: 'text',
+                text: questionText
+                  ? `Here is the interview question: "${questionText}"\n\nProvide a detailed step-by-step solution with code examples:`
+                  : `Analyze this screenshot carefully. Extract the interview question/problem statement from the image, then provide a detailed step-by-step solution with code examples.
+
+First, identify what the question is asking, then provide:
+- Problem understanding
+- Approach explanation
+- Step-by-step solution
+- Code implementation with comments
+- Complexity analysis`
+              },
+              {
+                type: 'image_url',
+                image_url: {
+                  url: `data:image/png;base64,${base64Data}`
+                }
+              }
+            ]
           }
         ]
-      }
-    ]
 
-    try {
-      let fullResponse = ''
+        let visionModel = this.config.model || 'gpt-4o-mini'
+        if (!visionModel.includes('gpt-4o')) {
+          visionModel = 'gpt-4o-mini'
+        }
 
-      // Use vision-capable model
-      const model = this.config.model || 'gpt-4o-mini'
-      const visionModel = model.includes('gpt-4o') ? model : 'gpt-4o-mini'
+        const stream = await this.client!.chat.completions.create({
+          model: visionModel,
+          messages: messages,
+          max_completion_tokens: this.config.maxTokens || 2000,
+          temperature: this.config.temperature || 0.7,
+          stream: true
+        })
 
-      const stream = await this.client.chat.completions.create({
-        model: visionModel,
-        messages: messages,
-        max_completion_tokens: this.config.maxTokens || 2000, // More tokens for detailed solutions
-        temperature: this.config.temperature || 0.7,
-        stream: true
-      })
-
-      for await (const chunk of stream) {
-        const content = chunk.choices[0]?.delta?.content || ''
-        if (content) {
-          fullResponse += content
-          this.emit('stream', content)
+        for await (const chunk of stream) {
+          const content = chunk.choices[0]?.delta?.content || ''
+          if (content) {
+            fullResponse += content
+            this.emit('stream', content)
+          }
         }
       }
 
@@ -328,9 +436,12 @@ First, identify what the question is asking, then provide:
   updateConfig(config: Partial<OpenAIConfig>): void {
     this.config = { ...this.config, ...config }
     if (config.apiKey) {
-      this.client = new OpenAI({
-        apiKey: config.apiKey
-      })
+      const isGemini = !config.apiKey.trim().startsWith('sk-')
+      if (!isGemini) {
+        this.client = new OpenAI({
+          apiKey: config.apiKey
+        })
+      }
     }
     if (config.resumeDescription !== undefined) {
       this.systemPrompt = getSystemPrompt(config.resumeDescription || '')
