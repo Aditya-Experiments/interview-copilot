@@ -129,7 +129,7 @@ export class AudioCaptureService {
       class AudioProcessor extends AudioWorkletProcessor {
         constructor() {
           super();
-          this.bufferSize = 4096;
+          this.bufferSize = 2048; // ~128ms at 16kHz for low latency
           this.buffer = new Float32Array(this.bufferSize);
           this.bufferIndex = 0;
         }

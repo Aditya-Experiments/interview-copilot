@@ -27,9 +27,9 @@ export class WhisperService extends EventEmitter {
   private lastAudioTime = 0
   private readonly SAMPLE_RATE = 16000
   private readonly BYTES_PER_SAMPLE = 2 // 16-bit audio
-  private readonly MIN_AUDIO_DURATION_MS = 1000 // Minimum 1.5 seconds of audio
-  private readonly SILENCE_THRESHOLD_MS = 1000 // 1.5 seconds of silence before processing
-  private readonly MAX_BUFFER_DURATION_MS = 20000 // Max 30 seconds before forced processing
+  private readonly MIN_AUDIO_DURATION_MS = 400 // Minimum 400ms of audio
+  private readonly SILENCE_THRESHOLD_MS = 400 // 400ms of silence before processing (fast turnaround)
+  private readonly MAX_BUFFER_DURATION_MS = 15000 // Max 15 seconds before forced processing
 
   constructor(config: WhisperConfig) {
     super()
@@ -47,10 +47,10 @@ export class WhisperService extends EventEmitter {
     this.audioBuffer = []
     this.lastAudioTime = Date.now()
 
-    // Check for silence every 500ms
+    // Check for silence every 100ms for rapid dispatch
     this.processInterval = setInterval(() => {
       this.checkAndProcess()
-    }, 300)
+    }, 100)
 
     console.log('WhisperService started')
     this.emit('started')
@@ -172,18 +172,27 @@ export class WhisperService extends EventEmitter {
 
         let response
         try {
-          response = await ai.models.generateContent({
-            model: 'gemini-3.1-flash-lite',
-            contents: [{ role: 'user', parts }],
-            config: { temperature: 0.0 }
-          })
-        } catch {
-          // Fallback to gemini-3.5-flash-lite
+          // gemini-3.5-flash-lite is the fastest multimodal model (~1.3s response time)
           response = await ai.models.generateContent({
             model: 'gemini-3.5-flash-lite',
             contents: [{ role: 'user', parts }],
             config: { temperature: 0.0 }
           })
+        } catch {
+          // Fallback to gemini-2.5-flash or gemini-3.1-flash-lite
+          try {
+            response = await ai.models.generateContent({
+              model: 'gemini-2.5-flash',
+              contents: [{ role: 'user', parts }],
+              config: { temperature: 0.0 }
+            })
+          } catch {
+            response = await ai.models.generateContent({
+              model: 'gemini-3.1-flash-lite',
+              contents: [{ role: 'user', parts }],
+              config: { temperature: 0.0 }
+            })
+          }
         }
 
         text = response.text?.trim() || ''
@@ -264,9 +273,8 @@ export class WhisperService extends EventEmitter {
       }
     }
 
-    // Filter out very short text (less than 3 words)
-    const wordCount = text.split(/\s+/).length
-    if (wordCount < 3) {
+    // Filter out empty or single character artifacts
+    if (!text.trim() || text.trim().length <= 1) {
       return true
     }
 
@@ -305,6 +313,14 @@ export class WhisperService extends EventEmitter {
     header.writeUInt32LE(dataSize, 40)
 
     return Buffer.concat([header, pcmData])
+  }
+
+  // Force-process current buffer immediately without waiting for silence
+  forceProcess(): void {
+    if (this.audioBuffer.length > 0 && !this.isProcessing) {
+      console.log('Force processing audio buffer immediately...')
+      this.processAudioBuffer()
+    }
   }
 
   getIsRunning(): boolean {

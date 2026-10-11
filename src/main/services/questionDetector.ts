@@ -78,8 +78,7 @@ const IGNORE_PATTERNS = [
   /^(mm+|uh+|um+|ah+|oh+|hmm+)[\s.,!?]*$/i,
   /^(I see|I understand|got it|makes sense|sounds good|no problem)[\s.,!?]*$/i,
   /^(see you|have a|take care|nice to|good to|pleasure).*$/i,
-  /^(we'll|we will|let me|let's|I'll|I will).*$/i,
-  /^(tell me about yourself).*$/i
+  /^(we'll|we will|let me|let's|I'll|I will).*$/i
 ]
 
 export class QuestionDetector extends EventEmitter {
