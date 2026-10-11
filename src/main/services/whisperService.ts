@@ -179,10 +179,10 @@ export class WhisperService extends EventEmitter {
             config: { temperature: 0.0 }
           })
         } catch {
-          // Fallback to gemini-2.5-flash or gemini-3.1-flash-lite
+          // Fallback to gemini-3.5-flash or gemini-3.1-flash-lite
           try {
             response = await ai.models.generateContent({
-              model: 'gemini-2.5-flash',
+              model: 'gemini-3.5-flash',
               contents: [{ role: 'user', parts }],
               config: { temperature: 0.0 }
             })
