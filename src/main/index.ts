@@ -2,7 +2,7 @@ import { electronApp, is, optimizer } from '@electron-toolkit/utils'
 import { app, BrowserWindow, nativeImage, screen, session, shell } from 'electron'
 import { join } from 'path'
 import icon from '../../resources/icon.png?asset'
-import { cleanupIpcHandlers, initializeIpcHandlers } from './ipc/handlers'
+import { applyAlwaysOnTop, cleanupIpcHandlers, initializeIpcHandlers } from './ipc/handlers'
 
 let mainWindow: BrowserWindow | null = null
 
@@ -25,6 +25,7 @@ function createWindow(): void {
     frame: false, // Frameless for custom title bar
     transparent: false,
     alwaysOnTop: true, // Stay on top by default
+    fullscreenable: false, // Prevent window from becoming its own fullscreen space
     skipTaskbar: false,
     resizable: true,
     icon: appIcon,
@@ -42,6 +43,9 @@ function createWindow(): void {
   mainWindow.on('ready-to-show', () => {
     if (process.platform === 'win32' && !appIcon.isEmpty()) {
       mainWindow?.setIcon(appIcon)
+    }
+    if (mainWindow) {
+      applyAlwaysOnTop(mainWindow, true)
     }
     mainWindow?.show()
     mainWindow?.focus()

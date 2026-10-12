@@ -18,11 +18,24 @@ let visionService: VisionService | null = null
 let mainWindow: BrowserWindow | null = null
 let isCapturing = false
 
+export function applyAlwaysOnTop(window: BrowserWindow, enabled: boolean): void {
+  if (process.platform === 'darwin') {
+    window.setVisibleOnAllWorkspaces(enabled, { visibleOnFullScreen: true })
+    window.setAlwaysOnTop(enabled, enabled ? 'screen-saver' : 'normal', 1)
+  } else {
+    window.setAlwaysOnTop(enabled, 'screen-saver')
+  }
+}
+
 export function initializeIpcHandlers(window: BrowserWindow): void {
   mainWindow = window
   settingsManager = new SettingsManager()
   historyManager = new HistoryManager()
   questionDetector = new QuestionDetector()
+
+  // Apply always-on-top configuration with full-screen support
+  const initialAlwaysOnTop = settingsManager.getSettings().alwaysOnTop ?? true
+  applyAlwaysOnTop(mainWindow, initialAlwaysOnTop)
 
   // Settings handlers
   ipcMain.handle('get-settings', () => {
@@ -46,7 +59,7 @@ export function initializeIpcHandlers(window: BrowserWindow): void {
 
     // Apply window settings immediately
     if (updates.alwaysOnTop !== undefined && mainWindow) {
-      mainWindow.setAlwaysOnTop(updates.alwaysOnTop)
+      applyAlwaysOnTop(mainWindow, updates.alwaysOnTop)
     }
     if (updates.windowOpacity !== undefined && mainWindow) {
       mainWindow.setOpacity(updates.windowOpacity)
@@ -292,7 +305,9 @@ export function initializeIpcHandlers(window: BrowserWindow): void {
 
   // Window control handlers
   ipcMain.handle('set-always-on-top', (_event, value: boolean) => {
-    mainWindow?.setAlwaysOnTop(value)
+    if (mainWindow) {
+      applyAlwaysOnTop(mainWindow, value)
+    }
     settingsManager?.setSetting('alwaysOnTop', value)
     return value
   })
