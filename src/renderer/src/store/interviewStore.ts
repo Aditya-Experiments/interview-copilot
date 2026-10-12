@@ -18,6 +18,7 @@ export interface AnswerEntry {
 export interface AppSettings {
   openaiApiKey: string
   openaiModel: string
+  deepgramApiKey?: string
   alwaysOnTop: boolean
   windowOpacity: number
   pauseThreshold: number
@@ -92,6 +93,7 @@ interface InterviewState {
 const DEFAULT_SETTINGS: AppSettings = {
   openaiApiKey: '',
   openaiModel: 'gemini-3.1-flash-lite',
+  deepgramApiKey: '',
   alwaysOnTop: true,
   windowOpacity: 1.0,
   pauseThreshold: 1500,

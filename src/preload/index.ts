@@ -23,6 +23,7 @@ export interface DetectedQuestionFromImage {
 export interface AppSettings {
   openaiApiKey: string
   openaiModel: string
+  deepgramApiKey?: string
   alwaysOnTop: boolean
   windowOpacity: number
   pauseThreshold: number

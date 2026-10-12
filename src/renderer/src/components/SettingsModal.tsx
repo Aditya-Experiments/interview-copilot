@@ -20,6 +20,7 @@ export function SettingsModal(): React.ReactNode | null {
   const { settings, showSettings, setShowSettings, setSettings } = useInterviewStore()
   const [localSettings, setLocalSettings] = useState<AppSettings>(settings)
   const [showOpenAIKey, setShowOpenAIKey] = useState(false)
+  const [showDeepgramKey, setShowDeepgramKey] = useState(false)
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
   const [models, setModels] = useState<ModelOption[]>([])
   const [modelsLoading, setModelsLoading] = useState(false)
@@ -183,6 +184,44 @@ export function SettingsModal(): React.ReactNode | null {
                 className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-dark-400 hover:text-dark-200"
               >
                 {showOpenAIKey ? <EyeOff size={16} /> : <Eye size={16} />}
+              </button>
+            </div>
+          </div>
+
+          {/* Deepgram API Key (Real-Time Live Streaming) */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <label className="block text-sm font-medium text-dark-200">
+                Deepgram API Key <span className="text-xs text-blue-400 font-normal">(Nova-2 Live Streaming)</span>
+              </label>
+              <a
+                href="https://console.deepgram.com/signup"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-xs text-blue-400 hover:underline font-medium"
+              >
+                Get Free Key ($200 Credit) →
+              </a>
+            </div>
+            <p className="text-xs text-dark-500">
+              Optional. Enables live speech streaming with ~150ms latency. If left blank, uses Gemini.
+            </p>
+            <div className="relative">
+              <input
+                type={showDeepgramKey ? 'text' : 'password'}
+                value={localSettings.deepgramApiKey || ''}
+                onChange={(e) =>
+                  setLocalSettings({ ...localSettings, deepgramApiKey: e.target.value })
+                }
+                placeholder="Enter Deepgram key for live ~150ms streaming"
+                className="w-full px-3 py-2 pr-10 bg-dark-800 border border-dark-600 rounded-lg text-sm text-dark-100 placeholder-dark-500 focus:outline-none focus:border-blue-500 transition-colors"
+              />
+              <button
+                type="button"
+                onClick={() => setShowDeepgramKey(!showDeepgramKey)}
+                className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-dark-400 hover:text-dark-200"
+              >
+                {showDeepgramKey ? <EyeOff size={16} /> : <Eye size={16} />}
               </button>
             </div>
           </div>

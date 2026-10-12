@@ -7,8 +7,11 @@ import { ScreenshotService } from '../services/screenshotService'
 import { AppSettings, SettingsManager } from '../services/settingsManager'
 import { VisionService } from '../services/visionService'
 import { WhisperService } from '../services/whisperService'
+import { DeepgramService } from '../services/deepgramService'
 
 let whisperService: WhisperService | null = null
+let deepgramService: DeepgramService | null = null
+let activeSttService: DeepgramService | WhisperService | null = null
 let openaiService: OpenAIService | null = null
 let questionDetector: QuestionDetector | null = null
 let settingsManager: SettingsManager | null = null
@@ -146,9 +149,12 @@ export function initializeIpcHandlers(window: BrowserWindow): void {
 
     try {
       // IMPORTANT: Clean up any existing services/listeners first to prevent duplicates
-      if (whisperService) {
-        whisperService.removeAllListeners()
+      if (activeSttService) {
+        activeSttService.stop()
+        activeSttService.removeAllListeners()
+        activeSttService = null
         whisperService = null
+        deepgramService = null
       }
       if (openaiService) {
         openaiService.removeAllListeners()
@@ -156,12 +162,24 @@ export function initializeIpcHandlers(window: BrowserWindow): void {
       }
       questionDetector?.removeAllListeners()
 
-      // Initialize Whisper service for transcription
-      whisperService = new WhisperService({
-        apiKey: settings.openaiApiKey,
-        model: 'whisper-1',
-        language: 'en'
-      })
+      // Choose STT Service: Deepgram Nova-2 if configured, else Whisper/Gemini
+      const useDeepgram = Boolean(settings.deepgramApiKey?.trim())
+
+      if (useDeepgram) {
+        console.log('===> Using Deepgram Nova-2 live WebSocket streaming')
+        deepgramService = new DeepgramService({
+          apiKey: settings.deepgramApiKey!.trim()
+        })
+        activeSttService = deepgramService
+      } else {
+        console.log('===> Using Gemini/Whisper audio transcription')
+        whisperService = new WhisperService({
+          apiKey: settings.openaiApiKey,
+          model: 'whisper-1',
+          language: 'en'
+        })
+        activeSttService = whisperService
+      }
 
       // Initialize OpenAI service for answer generation
       openaiService = new OpenAIService({
@@ -179,8 +197,8 @@ export function initializeIpcHandlers(window: BrowserWindow): void {
         mainWindow?.webContents.send('answer-complete', answer)
       })
 
-      // Set up Whisper event listeners
-      whisperService.on('transcript', async (event) => {
+      // Set up STT event listeners
+      activeSttService.on('transcript', async (event) => {
         console.log('Transcript received:', event.text)
         questionDetector?.addTranscript(event.text, event.isFinal)
         mainWindow?.webContents.send('transcript', event)
@@ -200,19 +218,19 @@ export function initializeIpcHandlers(window: BrowserWindow): void {
         }
       })
 
-      whisperService.on('utteranceEnd', () => {
+      activeSttService.on('utteranceEnd', () => {
         console.log('Processing utterance...')
         questionDetector?.onUtteranceEnd()
         mainWindow?.webContents.send('utterance-end')
       })
 
-      whisperService.on('speechStarted', () => {
+      activeSttService.on('speechStarted', () => {
         mainWindow?.webContents.send('speech-started')
       })
 
-      whisperService.on('error', (error) => {
-        const errorMessage = error instanceof Error ? error.message : 'Unknown capture error'
-        console.error('Whisper error:', errorMessage)
+      activeSttService.on('error', (error) => {
+        const errorMessage = error instanceof Error ? error.message : String(error)
+        console.error('STT error:', errorMessage)
         mainWindow?.webContents.send('capture-error', errorMessage)
       })
 
@@ -230,8 +248,8 @@ export function initializeIpcHandlers(window: BrowserWindow): void {
         }
       })
 
-      // Start Whisper service
-      whisperService.start()
+      // Start STT service
+      await activeSttService.start()
       isCapturing = true
       console.log('Audio capture started successfully')
 
@@ -246,10 +264,12 @@ export function initializeIpcHandlers(window: BrowserWindow): void {
   ipcMain.handle('stop-capture', async () => {
     isCapturing = false
 
-    if (whisperService) {
-      whisperService.stop()
-      whisperService.removeAllListeners()
+    if (activeSttService) {
+      activeSttService.stop()
+      activeSttService.removeAllListeners()
+      activeSttService = null
       whisperService = null
+      deepgramService = null
     }
 
     if (openaiService) {
@@ -271,8 +291,8 @@ export function initializeIpcHandlers(window: BrowserWindow): void {
 
   // Audio data from renderer
   ipcMain.on('audio-data', (_event, audioData: ArrayBuffer) => {
-    if (whisperService && isCapturing) {
-      whisperService.addAudioData(audioData)
+    if (activeSttService && isCapturing) {
+      activeSttService.addAudioData(audioData)
     }
   })
 
@@ -564,9 +584,11 @@ export function initializeIpcHandlers(window: BrowserWindow): void {
 }
 
 export function cleanupIpcHandlers(): void {
-  if (whisperService) {
-    whisperService.stop()
+  if (activeSttService) {
+    activeSttService.stop()
+    activeSttService = null
     whisperService = null
+    deepgramService = null
   }
   if (openaiService) {
     openaiService.removeAllListeners()

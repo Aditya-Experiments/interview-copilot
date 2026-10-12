@@ -9,6 +9,7 @@ config()
 export interface AppSettings {
   openaiApiKey: string
   openaiModel: string
+  deepgramApiKey?: string
   alwaysOnTop: boolean
   windowOpacity: number
   pauseThreshold: number
@@ -29,6 +30,7 @@ const DEFAULT_SETTINGS: AppSettings = {
     process.env.OPENAI_MODEL ||
     process.env.VITE_OPENAI_MODEL ||
     'gemini-3.1-flash-lite',
+  deepgramApiKey: getEnvApiKey('DEEPGRAM_API_KEY') || '',
   alwaysOnTop: true,
   windowOpacity: 1.0,
   pauseThreshold: 1500,
@@ -64,6 +66,16 @@ export class SettingsManager {
               savedSettings.openaiApiKey = ''
             }
           }
+          if (savedSettings.deepgramApiKeyEncrypted) {
+            try {
+              savedSettings.deepgramApiKey = safeStorage.decryptString(
+                Buffer.from(savedSettings.deepgramApiKeyEncrypted, 'base64')
+              )
+              delete savedSettings.deepgramApiKeyEncrypted
+            } catch {
+              savedSettings.deepgramApiKey = ''
+            }
+          }
         }
 
         const loaded = { ...DEFAULT_SETTINGS, ...savedSettings }
@@ -90,6 +102,12 @@ export class SettingsManager {
             .encryptString(settingsToSave.openaiApiKey)
             .toString('base64')
           settingsToSave.openaiApiKey = ''
+        }
+        if (settingsToSave.deepgramApiKey) {
+          ;(settingsToSave as Record<string, unknown>).deepgramApiKeyEncrypted = safeStorage
+            .encryptString(settingsToSave.deepgramApiKey)
+            .toString('base64')
+          settingsToSave.deepgramApiKey = ''
         }
       }
 

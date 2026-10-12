@@ -1,6 +1,6 @@
 {
   "name": "interview-copilot",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "interview-copilot - AI-powered interview help",
   "main": "./out/main/index.js",
   "author": "interview-copilot.app",
@@ -20,6 +20,7 @@
     "build:linux": "electron-vite build && electron-builder --linux"
   },
   "dependencies": {
+    "@deepgram/sdk": "^5.15.0",
     "@electron-toolkit/preload": "^3.0.2",
     "@electron-toolkit/utils": "^4.0.0",
     "@google/genai": "^2.28.0",
