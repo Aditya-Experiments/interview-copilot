@@ -170,25 +170,30 @@ export class WhisperService extends EventEmitter {
           }
         ]
 
+        const targetModel =
+          this.config.model && this.config.model.includes('gemini')
+            ? this.config.model
+            : 'gemini-3.1-flash-lite'
+
         let response
         try {
-          // gemini-3.5-flash-lite is the fastest multimodal model (~1.3s response time)
+          // gemini-3.1-flash-lite is the fastest multimodal model for transcription
           response = await ai.models.generateContent({
-            model: 'gemini-3.5-flash-lite',
+            model: targetModel,
             contents: [{ role: 'user', parts }],
             config: { temperature: 0.0 }
           })
         } catch {
-          // Fallback to gemini-3.5-flash or gemini-3.1-flash-lite
+          // Fallback to gemini-3.1-flash-lite or gemini-2.5-flash
           try {
             response = await ai.models.generateContent({
-              model: 'gemini-3.5-flash',
+              model: 'gemini-3.1-flash-lite',
               contents: [{ role: 'user', parts }],
               config: { temperature: 0.0 }
             })
           } catch {
             response = await ai.models.generateContent({
-              model: 'gemini-3.1-flash-lite',
+              model: 'gemini-2.5-flash',
               contents: [{ role: 'user', parts }],
               config: { temperature: 0.0 }
             })

@@ -163,19 +163,26 @@ export function initializeIpcHandlers(window: BrowserWindow): void {
       questionDetector?.removeAllListeners()
 
       // Choose STT Service: Deepgram Nova-2 if configured, else Whisper/Gemini
-      const useDeepgram = Boolean(settings.deepgramApiKey?.trim())
+      const rawDeepgramKey = settings.deepgramApiKey?.trim() || ''
+      const isGeminiOrOpenAiKey =
+        rawDeepgramKey.startsWith('AIza') ||
+        rawDeepgramKey.startsWith('AQ.') ||
+        rawDeepgramKey.startsWith('sk-') ||
+        rawDeepgramKey === settings.openaiApiKey?.trim()
+
+      const useDeepgram = Boolean(rawDeepgramKey) && !isGeminiOrOpenAiKey
 
       if (useDeepgram) {
         console.log('===> Using Deepgram Nova-2 live WebSocket streaming')
         deepgramService = new DeepgramService({
-          apiKey: settings.deepgramApiKey!.trim()
+          apiKey: rawDeepgramKey
         })
         activeSttService = deepgramService
       } else {
         console.log('===> Using Gemini/Whisper audio transcription')
         whisperService = new WhisperService({
           apiKey: settings.openaiApiKey,
-          model: 'whisper-1',
+          model: settings.openaiModel || 'gemini-3.1-flash-lite',
           language: 'en'
         })
         activeSttService = whisperService
@@ -274,7 +281,7 @@ export function initializeIpcHandlers(window: BrowserWindow): void {
           // Initialize fallback Whisper/Gemini service
           whisperService = new WhisperService({
             apiKey: settings.openaiApiKey,
-            model: 'whisper-1',
+            model: settings.openaiModel || 'gemini-3.1-flash-lite',
             language: 'en'
           })
           activeSttService = whisperService

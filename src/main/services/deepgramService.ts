@@ -44,9 +44,7 @@ export class DeepgramService extends EventEmitter {
         smart_format: 'true' as any,
         interim_results: 'true' as any,
         endpointing: 300 as any,
-        utterance_end_ms: 800 as any,
-        vad_events: 'true' as any,
-        reconnectAttempts: 3
+        utterance_end_ms: 1000 as any
       } as any)
 
       this.connection.on('open', () => {
@@ -91,20 +89,11 @@ export class DeepgramService extends EventEmitter {
         console.log('Deepgram WebSocket closed')
       })
 
-      // In Deepgram SDK v5, connect() activates the start-closed socket
-      this.connection.connect()
-
-      // Timeout after 6 seconds to avoid hanging indefinitely on poor network
-      const timeoutPromise = new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error('Deepgram WebSocket connection timed out after 6s')), 6000)
-      )
-      await Promise.race([this.connection.waitForOpen(), timeoutPromise])
-
       // Send keep-alive ping every 8 seconds if no audio is streamed
       this.keepAliveInterval = setInterval(() => {
-        if (this.connection && this.isRunning && this.connection.socket?.readyState === 1) {
+        if (this.connection && this.isRunning) {
           try {
-            this.connection.sendKeepAlive({ type: 'KeepAlive' } as any)
+            this.connection.sendKeepAlive()
           } catch {
             // Ignore keepalive error
           }
@@ -116,7 +105,7 @@ export class DeepgramService extends EventEmitter {
       const detail =
         err?.message ||
         err?.error?.message ||
-        (err?.type === 'error' ? 'Failed to connect to Deepgram (verify your API key or network)' : String(err))
+        (err?.type === 'error' ? 'Failed to connect to Deepgram (verify API key or network)' : String(err))
       console.error('Failed to connect to Deepgram Nova-2:', detail)
       this.stop()
       throw new Error(detail)
@@ -133,9 +122,7 @@ export class DeepgramService extends EventEmitter {
 
     if (this.connection) {
       try {
-        if (this.connection.socket?.readyState === 1) {
-          this.connection.sendCloseStream({ type: 'CloseStream' } as any)
-        }
+        this.connection.sendCloseStream()
         this.connection.close()
       } catch {
         // Ignore close error
@@ -148,8 +135,6 @@ export class DeepgramService extends EventEmitter {
 
   addAudioData(audioData: Buffer | ArrayBuffer): void {
     if (!this.isRunning || !this.connection) return
-    // Only send if socket is in OPEN state (1)
-    if (this.connection.socket && this.connection.socket.readyState !== 1) return
 
     try {
       const buffer = audioData instanceof ArrayBuffer ? Buffer.from(audioData) : audioData
