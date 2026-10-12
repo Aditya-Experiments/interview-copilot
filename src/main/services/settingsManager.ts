@@ -7,9 +7,21 @@ import * as path from 'path'
 config()
 
 export interface AppSettings {
+  groqApiKeys?: string[]
+  geminiApiKeys?: string[]
+  openaiApiKeys?: string[]
+  deepgramApiKeys?: string[]
+
+  // Legacy single key fields kept for backward compatibility:
+  groqApiKey?: string
+  geminiApiKey?: string
   openaiApiKey: string
-  openaiModel: string
   deepgramApiKey?: string
+
+  openaiModel: string
+  groqModel?: string
+  geminiModel?: string
+
   alwaysOnTop: boolean
   windowOpacity: number
   pauseThreshold: number
@@ -23,19 +35,64 @@ const getEnvApiKey = (key: string): string => {
 }
 
 const DEFAULT_SETTINGS: AppSettings = {
-  openaiApiKey: getEnvApiKey('GEMINI_API_KEY') || getEnvApiKey('OPENAI_API_KEY'),
+  groqApiKeys: [],
+  geminiApiKeys: [],
+  openaiApiKeys: [],
+  deepgramApiKeys: [],
+  groqApiKey: getEnvApiKey('GROQ_API_KEY') || '',
+  geminiApiKey: getEnvApiKey('GEMINI_API_KEY') || '',
+  openaiApiKey: getEnvApiKey('OPENAI_API_KEY') || '',
   openaiModel:
+    process.env.GROQ_MODEL ||
+    process.env.VITE_GROQ_MODEL ||
     process.env.GEMINI_MODEL ||
     process.env.VITE_GEMINI_MODEL ||
     process.env.OPENAI_MODEL ||
     process.env.VITE_OPENAI_MODEL ||
-    'gemini-3.1-flash-lite',
+    'llama-3.3-70b-versatile',
+  groqModel: 'llama-3.3-70b-versatile',
+  geminiModel: 'gemini-3.5-flash-lite',
   deepgramApiKey: getEnvApiKey('DEEPGRAM_API_KEY') || '',
   alwaysOnTop: true,
   windowOpacity: 1.0,
   pauseThreshold: 1500,
   autoStart: false,
   resumeDescription: ''
+}
+
+const decryptKeyList = (savedSettings: Record<string, any>, keyField: string, encField: string): string[] => {
+  const result: string[] = []
+  if (Array.isArray(savedSettings[keyField])) {
+    for (const k of savedSettings[keyField]) {
+      if (typeof k === 'string' && k.trim() && !result.includes(k.trim())) {
+        result.push(k.trim())
+      }
+    }
+  }
+  if (Array.isArray(savedSettings[encField]) && safeStorage.isEncryptionAvailable()) {
+    for (const enc of savedSettings[encField]) {
+      try {
+        const decrypted = safeStorage.decryptString(Buffer.from(enc, 'base64')).trim()
+        if (decrypted && !result.includes(decrypted)) {
+          result.push(decrypted)
+        }
+      } catch {
+        // ignore decryption error
+      }
+    }
+    delete savedSettings[encField]
+  }
+  return result
+}
+
+const encryptKeyList = (settingsToSave: Record<string, any>, keyField: string, encField: string): void => {
+  const keys: string[] = Array.isArray(settingsToSave[keyField])
+    ? (settingsToSave[keyField] as string[]).map((k) => k.trim()).filter(Boolean)
+    : []
+  if (keys.length > 0 && safeStorage.isEncryptionAvailable()) {
+    settingsToSave[encField] = keys.map((k) => safeStorage.encryptString(k).toString('base64'))
+    settingsToSave[keyField] = []
+  }
 }
 
 export class SettingsManager {
@@ -54,35 +111,86 @@ export class SettingsManager {
         const data = fs.readFileSync(this.settingsPath, 'utf-8')
         const savedSettings = JSON.parse(data)
 
-        // Decrypt API keys if encryption is available
+        // Decrypt key arrays
+        const groqKeys = decryptKeyList(savedSettings, 'groqApiKeys', 'groqApiKeysEncrypted')
+        const geminiKeys = decryptKeyList(savedSettings, 'geminiApiKeys', 'geminiApiKeysEncrypted')
+        const openaiKeys = decryptKeyList(savedSettings, 'openaiApiKeys', 'openaiApiKeysEncrypted')
+        const deepgramKeys = decryptKeyList(savedSettings, 'deepgramApiKeys', 'deepgramApiKeysEncrypted')
+
+        // Decrypt legacy single keys
         if (safeStorage.isEncryptionAvailable()) {
+          if (savedSettings.groqApiKeyEncrypted) {
+            try {
+              const k = safeStorage.decryptString(Buffer.from(savedSettings.groqApiKeyEncrypted, 'base64')).trim()
+              if (k && !groqKeys.includes(k)) groqKeys.push(k)
+              delete savedSettings.groqApiKeyEncrypted
+            } catch {
+              // ignore
+            }
+          }
+          if (savedSettings.geminiApiKeyEncrypted) {
+            try {
+              const k = safeStorage.decryptString(Buffer.from(savedSettings.geminiApiKeyEncrypted, 'base64')).trim()
+              if (k && !geminiKeys.includes(k)) geminiKeys.push(k)
+              delete savedSettings.geminiApiKeyEncrypted
+            } catch {
+              // ignore
+            }
+          }
           if (savedSettings.openaiApiKeyEncrypted) {
             try {
-              savedSettings.openaiApiKey = safeStorage.decryptString(
-                Buffer.from(savedSettings.openaiApiKeyEncrypted, 'base64')
-              )
+              const k = safeStorage.decryptString(Buffer.from(savedSettings.openaiApiKeyEncrypted, 'base64')).trim()
+              if (k) {
+                if (k.startsWith('gsk_') && !groqKeys.includes(k)) groqKeys.push(k)
+                else if ((k.startsWith('AIza') || k.startsWith('AQ.')) && !geminiKeys.includes(k)) geminiKeys.push(k)
+                else if (!openaiKeys.includes(k)) openaiKeys.push(k)
+              }
               delete savedSettings.openaiApiKeyEncrypted
             } catch {
-              savedSettings.openaiApiKey = ''
+              // ignore
             }
           }
           if (savedSettings.deepgramApiKeyEncrypted) {
             try {
-              savedSettings.deepgramApiKey = safeStorage.decryptString(
-                Buffer.from(savedSettings.deepgramApiKeyEncrypted, 'base64')
-              )
+              const k = safeStorage.decryptString(Buffer.from(savedSettings.deepgramApiKeyEncrypted, 'base64')).trim()
+              if (k && !deepgramKeys.includes(k)) deepgramKeys.push(k)
               delete savedSettings.deepgramApiKeyEncrypted
             } catch {
-              savedSettings.deepgramApiKey = ''
+              // ignore
             }
           }
         }
 
-        const loaded = { ...DEFAULT_SETTINGS, ...savedSettings }
-        // Automatically migrate deprecated models (e.g. 2.0 or discontinued 2.5)
-        if (loaded.openaiModel && (loaded.openaiModel.includes('2.0') || loaded.openaiModel === 'gemini-2.5-flash')) {
-          loaded.openaiModel = 'gemini-3.1-flash-lite'
+        // Migrate plain single keys if any
+        if (savedSettings.groqApiKey && !groqKeys.includes(savedSettings.groqApiKey.trim())) {
+          groqKeys.push(savedSettings.groqApiKey.trim())
         }
+        if (savedSettings.geminiApiKey && !geminiKeys.includes(savedSettings.geminiApiKey.trim())) {
+          geminiKeys.push(savedSettings.geminiApiKey.trim())
+        }
+        if (savedSettings.openaiApiKey) {
+          const k = savedSettings.openaiApiKey.trim()
+          if (k.startsWith('gsk_') && !groqKeys.includes(k)) groqKeys.push(k)
+          else if ((k.startsWith('AIza') || k.startsWith('AQ.')) && !geminiKeys.includes(k)) geminiKeys.push(k)
+          else if (!openaiKeys.includes(k)) openaiKeys.push(k)
+        }
+        if (savedSettings.deepgramApiKey && !deepgramKeys.includes(savedSettings.deepgramApiKey.trim())) {
+          deepgramKeys.push(savedSettings.deepgramApiKey.trim())
+        }
+
+        const loaded: AppSettings = {
+          ...DEFAULT_SETTINGS,
+          ...savedSettings,
+          groqApiKeys: groqKeys,
+          geminiApiKeys: geminiKeys,
+          openaiApiKeys: openaiKeys,
+          deepgramApiKeys: deepgramKeys,
+          groqApiKey: groqKeys[0] || savedSettings.groqApiKey || '',
+          geminiApiKey: geminiKeys[0] || savedSettings.geminiApiKey || '',
+          openaiApiKey: openaiKeys[0] || groqKeys[0] || geminiKeys[0] || savedSettings.openaiApiKey || '',
+          deepgramApiKey: deepgramKeys[0] || savedSettings.deepgramApiKey || ''
+        }
+
         return loaded
       }
     } catch (error) {
@@ -93,23 +201,19 @@ export class SettingsManager {
 
   private saveSettings(): void {
     try {
-      const settingsToSave = { ...this.settings }
+      const settingsToSave: Record<string, any> = { ...this.settings }
 
-      // Encrypt API keys if encryption is available
-      if (safeStorage.isEncryptionAvailable()) {
-        if (settingsToSave.openaiApiKey) {
-          ;(settingsToSave as Record<string, unknown>).openaiApiKeyEncrypted = safeStorage
-            .encryptString(settingsToSave.openaiApiKey)
-            .toString('base64')
-          settingsToSave.openaiApiKey = ''
-        }
-        if (settingsToSave.deepgramApiKey) {
-          ;(settingsToSave as Record<string, unknown>).deepgramApiKeyEncrypted = safeStorage
-            .encryptString(settingsToSave.deepgramApiKey)
-            .toString('base64')
-          settingsToSave.deepgramApiKey = ''
-        }
-      }
+      // Encrypt arrays of keys
+      encryptKeyList(settingsToSave, 'groqApiKeys', 'groqApiKeysEncrypted')
+      encryptKeyList(settingsToSave, 'geminiApiKeys', 'geminiApiKeysEncrypted')
+      encryptKeyList(settingsToSave, 'openaiApiKeys', 'openaiApiKeysEncrypted')
+      encryptKeyList(settingsToSave, 'deepgramApiKeys', 'deepgramApiKeysEncrypted')
+
+      // Clear plain key strings in file for security
+      delete settingsToSave.groqApiKey
+      delete settingsToSave.geminiApiKey
+      delete settingsToSave.openaiApiKey
+      delete settingsToSave.deepgramApiKey
 
       fs.writeFileSync(this.settingsPath, JSON.stringify(settingsToSave, null, 2))
     } catch (error) {
@@ -121,26 +225,45 @@ export class SettingsManager {
     return { ...this.settings }
   }
 
-  getSetting<K extends keyof AppSettings>(key: K): AppSettings[K] {
-    return this.settings[key]
+  updateSettings(updates: Partial<AppSettings>): AppSettings {
+    // If arrays were updated, ensure single key aliases stay synced
+    const newSettings = { ...this.settings, ...updates }
+    if (updates.groqApiKeys) {
+      newSettings.groqApiKey = updates.groqApiKeys[0] || ''
+    }
+    if (updates.geminiApiKeys) {
+      newSettings.geminiApiKey = updates.geminiApiKeys[0] || ''
+    }
+    if (updates.openaiApiKeys) {
+      newSettings.openaiApiKey = updates.openaiApiKeys[0] || ''
+    }
+    if (updates.deepgramApiKeys) {
+      newSettings.deepgramApiKey = updates.deepgramApiKeys[0] || ''
+    }
+
+    this.settings = newSettings
+    this.saveSettings()
+    return this.getSettings()
   }
 
-  updateSettings(updates: Partial<AppSettings>): void {
-    this.settings = { ...this.settings, ...updates }
-    this.saveSettings()
+  hasApiKeys(): boolean {
+    return Boolean(
+      (this.settings.groqApiKeys && this.settings.groqApiKeys.length > 0) ||
+      (this.settings.geminiApiKeys && this.settings.geminiApiKeys.length > 0) ||
+      (this.settings.openaiApiKeys && this.settings.openaiApiKeys.length > 0) ||
+      this.settings.groqApiKey ||
+      this.settings.geminiApiKey ||
+      this.settings.openaiApiKey ||
+      this.settings.deepgramApiKey
+    )
+  }
+
+  getSetting<K extends keyof AppSettings>(key: K): AppSettings[K] {
+    return this.settings[key]
   }
 
   setSetting<K extends keyof AppSettings>(key: K, value: AppSettings[K]): void {
     this.settings[key] = value
     this.saveSettings()
-  }
-
-  resetToDefaults(): void {
-    this.settings = { ...DEFAULT_SETTINGS }
-    this.saveSettings()
-  }
-
-  hasApiKeys(): boolean {
-    return Boolean(this.settings.openaiApiKey)
   }
 }

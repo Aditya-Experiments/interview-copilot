@@ -8,8 +8,13 @@ export interface Message {
 }
 
 export interface OpenAIConfig {
-  apiKey: string
+  apiKey?: string
+  groqApiKeys?: string[]
+  geminiApiKeys?: string[]
+  openaiApiKeys?: string[]
   model?: string
+  groqModel?: string
+  geminiModel?: string
   maxTokens?: number
   temperature?: number
   resumeDescription?: string
@@ -173,7 +178,6 @@ Format with clear headings, but write naturally. Sound like a real candidate exp
 }
 
 export class OpenAIService extends EventEmitter {
-  private client: OpenAI | null = null
   private config: OpenAIConfig
   private conversationHistory: Message[] = []
   private maxHistoryLength = 10
@@ -182,19 +186,99 @@ export class OpenAIService extends EventEmitter {
   constructor(config: OpenAIConfig) {
     super()
     this.config = config
-    const apiKeyTrimmed = config.apiKey?.trim() || ''
-    const isGemini = !apiKeyTrimmed.startsWith('sk-')
-    this.client = new OpenAI({
-      apiKey: config.apiKey,
-      baseURL: isGemini ? 'https://generativelanguage.googleapis.com/v1beta/openai/' : undefined
-    })
     this.systemPrompt = getSystemPrompt(config.resumeDescription || '')
   }
 
+  private getProviderAttempts(): Array<{
+    provider: 'groq' | 'gemini' | 'openai'
+    key: string
+    model: string
+    index: number
+  }> {
+    const attempts: Array<{
+      provider: 'groq' | 'gemini' | 'openai'
+      key: string
+      model: string
+      index: number
+    }> = []
+
+    // 1. Groq Keys (Priority 1: Ultra-fast ~150ms answers)
+    const groqKeys: string[] = []
+    if (this.config.groqApiKeys && Array.isArray(this.config.groqApiKeys)) {
+      for (const k of this.config.groqApiKeys) {
+        if (k && k.trim() && !groqKeys.includes(k.trim())) groqKeys.push(k.trim())
+      }
+    }
+    if (this.config.apiKey?.trim().startsWith('gsk_') && !groqKeys.includes(this.config.apiKey.trim())) {
+      groqKeys.push(this.config.apiKey.trim())
+    }
+    groqKeys.forEach((key, idx) => {
+      attempts.push({
+        provider: 'groq',
+        key,
+        model: this.config.groqModel || this.config.model || 'llama-3.3-70b-versatile',
+        index: idx + 1
+      })
+    })
+
+    // 2. Gemini Keys (Priority 2: 100% Free Multimodal)
+    const geminiKeys: string[] = []
+    if (this.config.geminiApiKeys && Array.isArray(this.config.geminiApiKeys)) {
+      for (const k of this.config.geminiApiKeys) {
+        if (k && k.trim() && !geminiKeys.includes(k.trim())) geminiKeys.push(k.trim())
+      }
+    }
+    if (
+      this.config.apiKey?.trim() &&
+      !this.config.apiKey.trim().startsWith('gsk_') &&
+      !this.config.apiKey.trim().startsWith('sk-') &&
+      !geminiKeys.includes(this.config.apiKey.trim())
+    ) {
+      geminiKeys.push(this.config.apiKey.trim())
+    }
+    geminiKeys.forEach((key, idx) => {
+      let gModel = this.config.geminiModel || this.config.model || 'gemini-3.5-flash-lite'
+      if (gModel.includes('llama') || gModel.includes('gpt')) {
+        gModel = 'gemini-3.5-flash-lite'
+      }
+      attempts.push({
+        provider: 'gemini',
+        key,
+        model: gModel,
+        index: idx + 1
+      })
+    })
+
+    // 3. OpenAI Keys (Priority 3: ChatGPT)
+    const openaiKeys: string[] = []
+    if (this.config.openaiApiKeys && Array.isArray(this.config.openaiApiKeys)) {
+      for (const k of this.config.openaiApiKeys) {
+        if (k && k.trim() && !openaiKeys.includes(k.trim())) openaiKeys.push(k.trim())
+      }
+    }
+    if (this.config.apiKey?.trim().startsWith('sk-') && !openaiKeys.includes(this.config.apiKey.trim())) {
+      openaiKeys.push(this.config.apiKey.trim())
+    }
+    openaiKeys.forEach((key, idx) => {
+      let oModel = this.config.model || 'gpt-4o-mini'
+      if (!oModel.includes('gpt')) {
+        oModel = 'gpt-4o-mini'
+      }
+      attempts.push({
+        provider: 'openai',
+        key,
+        model: oModel,
+        index: idx + 1
+      })
+    })
+
+    return attempts
+  }
+
   async generateAnswer(question: string): Promise<string> {
-    const isGemini = !this.config.apiKey?.trim().startsWith('sk-')
-    if (!isGemini && !this.client) {
-      throw new Error('OpenAI client not initialized')
+    const attempts = this.getProviderAttempts()
+    if (attempts.length === 0) {
+      throw new Error('No API keys configured. Please add an API key in Settings.')
     }
 
     // Add the question to history
@@ -208,133 +292,159 @@ export class OpenAIService extends EventEmitter {
       this.conversationHistory = this.conversationHistory.slice(-this.maxHistoryLength)
     }
 
-    try {
+    let lastError: unknown = null
+
+    for (let i = 0; i < attempts.length; i++) {
+      const attempt = attempts[i]
       let fullResponse = ''
 
-      if (isGemini) {
-        let model = this.config.model || 'gemini-3.1-flash-lite'
-        // Remap any deprecated model names to current equivalents
-        if (model.includes('2.0')) {
-          model = 'gemini-3.1-flash-lite'
-        }
-        const ai = new GoogleGenAI({ apiKey: this.config.apiKey?.trim() })
-        const contents = this.conversationHistory.map((msg) => ({
-          role: msg.role === 'assistant' ? 'model' : 'user',
-          parts: [{ text: msg.content }]
-        }))
+      try {
+        if (attempt.provider === 'groq') {
+          const client = new OpenAI({
+            apiKey: attempt.key,
+            baseURL: 'https://api.groq.com/openai/v1'
+          })
 
-        const createStream = async (targetModel: string) => {
-          try {
-            return await ai.models.generateContentStream({
-              model: targetModel,
-              contents: contents,
-              config: {
-                systemInstruction: this.systemPrompt,
-                maxOutputTokens: this.config.maxTokens || 500,
-                temperature: this.config.temperature || 0.7,
-                thinkingConfig: {
-                  thinkingBudget: 0
+          const messages: Message[] = [
+            { role: 'system', content: this.systemPrompt },
+            ...this.conversationHistory
+          ]
+
+          const stream = await client.chat.completions.create({
+            model: attempt.model,
+            messages: messages,
+            max_completion_tokens: this.config.maxTokens || 500,
+            temperature: this.config.temperature || 0.7,
+            stream: true
+          })
+
+          for await (const chunk of stream) {
+            const content = chunk.choices[0]?.delta?.content || ''
+            if (content) {
+              fullResponse += content
+              this.emit('stream', content)
+            }
+          }
+        } else if (attempt.provider === 'openai') {
+          const client = new OpenAI({
+            apiKey: attempt.key
+          })
+
+          const messages: Message[] = [
+            { role: 'system', content: this.systemPrompt },
+            ...this.conversationHistory
+          ]
+
+          const stream = await client.chat.completions.create({
+            model: attempt.model,
+            messages: messages,
+            max_completion_tokens: this.config.maxTokens || 500,
+            temperature: this.config.temperature || 0.7,
+            stream: true
+          })
+
+          for await (const chunk of stream) {
+            const content = chunk.choices[0]?.delta?.content || ''
+            if (content) {
+              fullResponse += content
+              this.emit('stream', content)
+            }
+          }
+        } else {
+          // Google Gemini (with zero thinking tokens)
+          const ai = new GoogleGenAI({ apiKey: attempt.key })
+          const contents = this.conversationHistory.map((msg) => ({
+            role: msg.role === 'assistant' ? 'model' : 'user',
+            parts: [{ text: msg.content }]
+          }))
+
+          const createStream = async (targetModel: string) => {
+            try {
+              return await ai.models.generateContentStream({
+                model: targetModel,
+                contents: contents,
+                config: {
+                  systemInstruction: this.systemPrompt,
+                  maxOutputTokens: this.config.maxTokens || 500,
+                  temperature: this.config.temperature || 0.7,
+                  thinkingConfig: {
+                    thinkingBudget: 0
+                  }
                 }
-              }
-            })
+              })
+            } catch {
+              return await ai.models.generateContentStream({
+                model: targetModel,
+                contents: contents,
+                config: {
+                  systemInstruction: this.systemPrompt,
+                  maxOutputTokens: this.config.maxTokens || 500,
+                  temperature: this.config.temperature || 0.7
+                }
+              })
+            }
+          }
+
+          let stream
+          try {
+            stream = await createStream(attempt.model)
           } catch {
-            return await ai.models.generateContentStream({
-              model: targetModel,
-              contents: contents,
-              config: {
-                systemInstruction: this.systemPrompt,
-                maxOutputTokens: this.config.maxTokens || 500,
-                temperature: this.config.temperature || 0.7
-              }
-            })
+            stream = await createStream('gemini-3.5-flash-lite')
+          }
+
+          for await (const chunk of stream) {
+            const content = chunk.text || ''
+            if (content) {
+              fullResponse += content
+              this.emit('stream', content)
+            }
           }
         }
 
-        let stream
-        try {
-          stream = await createStream(model)
-        } catch {
-          stream = await createStream('gemini-3.1-flash-lite')
-        }
-
-        for await (const chunk of stream) {
-          const content = chunk.text || ''
-          if (content) {
-            fullResponse += content
-            this.emit('stream', content)
-          }
-        }
-      } else {
-        const messages: Message[] = [
-          { role: 'system', content: this.systemPrompt },
-          ...this.conversationHistory
-        ]
-
-        const stream = await this.client!.chat.completions.create({
-          model: this.config.model || 'gpt-4o-mini',
-          messages: messages,
-          max_completion_tokens: this.config.maxTokens || 500,
-          temperature: this.config.temperature || 0.7,
-          stream: true
+        // Successfully generated answer
+        this.conversationHistory.push({
+          role: 'assistant',
+          content: fullResponse
         })
 
-        for await (const chunk of stream) {
-          const content = chunk.choices[0]?.delta?.content || ''
-          if (content) {
-            fullResponse += content
-            this.emit('stream', content)
-          }
+        this.emit('complete', fullResponse)
+        return fullResponse
+      } catch (err: any) {
+        lastError = err
+        const hasNext = i + 1 < attempts.length
+        if (hasNext) {
+          const next = attempts[i + 1]
+          const warnMsg = `⚠️ Rate limit/error on ${attempt.provider.toUpperCase()} Key #${attempt.index} (${err?.message || 'Error'}). Auto-switching to ${next.provider.toUpperCase()} Key #${next.index}...`
+          console.warn(warnMsg)
+          this.emit('warn', warnMsg)
+          continue
         }
       }
-
-      // Add assistant response to history
-      this.conversationHistory.push({
-        role: 'assistant',
-        content: fullResponse
-      })
-
-      this.emit('complete', fullResponse)
-      return fullResponse
-    } catch (error) {
-      this.emit('error', error)
-      throw error
     }
+
+    this.emit('error', lastError)
+    throw lastError
   }
 
   clearHistory(): void {
     this.conversationHistory = []
   }
 
-  /**
-   * Generates a detailed solution for an interview question from a screenshot
-   * @param imageBase64 Base64 encoded image data URL
-   * @param questionText Optional extracted question text
-   * @param questionType Type of question (leetcode, system-design, other)
-   * @returns Generated solution
-   */
   async generateSolutionFromImage(
     imageBase64: string,
     questionText?: string,
     questionType?: 'leetcode' | 'system-design' | 'other'
   ): Promise<string> {
-    const isGemini = !this.config.apiKey?.trim().startsWith('sk-')
-    if (!isGemini && !this.client) {
-      throw new Error('OpenAI client not initialized')
+    const attempts = this.getProviderAttempts()
+    if (attempts.length === 0) {
+      throw new Error('No API keys configured. Please add an API key in Settings.')
     }
 
-    // Remove data URL prefix if present
     const base64Data = imageBase64.includes(',') ? imageBase64.split(',')[1] : imageBase64
-
     const solutionPrompt = getSolutionSystemPrompt(questionType)
-
-    try {
-      let fullResponse = ''
-
-      if (isGemini) {
-        const ai = new GoogleGenAI({ apiKey: this.config.apiKey?.trim() })
-        const promptText = questionText
-          ? `Here is the interview question: "${questionText}"\n\nProvide a detailed step-by-step solution with code examples:`
-          : `Analyze this screenshot carefully. Extract the interview question/problem statement from the image, then provide a detailed step-by-step solution with code examples.
+    const promptText = questionText
+      ? `Here is the interview question: "${questionText}"\n\nProvide a detailed step-by-step solution with code examples:`
+      : `Analyze this screenshot carefully. Extract the interview question/problem statement from the image, then provide a detailed step-by-step solution with code examples.
 
 First, identify what the question is asking, then provide:
 - Problem understanding
@@ -343,117 +453,147 @@ First, identify what the question is asking, then provide:
 - Code implementation with comments
 - Complexity analysis`
 
-        const payload = {
-          contents: [
+    let lastError: unknown = null
+
+    for (let i = 0; i < attempts.length; i++) {
+      const attempt = attempts[i]
+      let fullResponse = ''
+
+      try {
+        if (attempt.provider === 'groq') {
+          const client = new OpenAI({
+            apiKey: attempt.key,
+            baseURL: 'https://api.groq.com/openai/v1'
+          })
+
+          const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
+            { role: 'system', content: solutionPrompt },
             {
               role: 'user',
-              parts: [
-                { text: promptText },
+              content: [
+                { type: 'text', text: promptText },
                 {
-                  inlineData: {
-                    mimeType: 'image/png',
-                    data: base64Data
-                  }
+                  type: 'image_url',
+                  image_url: { url: `data:image/png;base64,${base64Data}` }
                 }
               ]
             }
-          ],
-          config: {
-            systemInstruction: solutionPrompt,
-            maxOutputTokens: this.config.maxTokens || 2000,
-            temperature: this.config.temperature || 0.7
-          }
-        }
+          ]
 
-        let stream
-        try {
-          stream = await ai.models.generateContentStream({
-            model: 'gemini-3.1-flash-lite',
-            ...payload
+          const stream = await client.chat.completions.create({
+            model: 'llama-3.2-11b-vision-preview',
+            messages: messages,
+            max_completion_tokens: this.config.maxTokens || 2000,
+            temperature: this.config.temperature || 0.7,
+            stream: true
           })
-        } catch {
-          stream = await ai.models.generateContentStream({
-            model: 'gemini-3.5-flash-lite',
-            ...payload
-          })
-        }
 
-        for await (const chunk of stream) {
-          const content = chunk.text || ''
-          if (content) {
-            fullResponse += content
-            this.emit('stream', content)
+          for await (const chunk of stream) {
+            const content = chunk.choices[0]?.delta?.content || ''
+            if (content) {
+              fullResponse += content
+              this.emit('stream', content)
+            }
           }
-        }
-      } else {
-        const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
-          { role: 'system', content: solutionPrompt },
-          {
-            role: 'user',
-            content: [
-              {
-                type: 'text',
-                text: questionText
-                  ? `Here is the interview question: "${questionText}"\n\nProvide a detailed step-by-step solution with code examples:`
-                  : `Analyze this screenshot carefully. Extract the interview question/problem statement from the image, then provide a detailed step-by-step solution with code examples.
-
-First, identify what the question is asking, then provide:
-- Problem understanding
-- Approach explanation
-- Step-by-step solution
-- Code implementation with comments
-- Complexity analysis`
-              },
-              {
-                type: 'image_url',
-                image_url: {
-                  url: `data:image/png;base64,${base64Data}`
+        } else if (attempt.provider === 'openai') {
+          const client = new OpenAI({ apiKey: attempt.key })
+          const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
+            { role: 'system', content: solutionPrompt },
+            {
+              role: 'user',
+              content: [
+                { type: 'text', text: promptText },
+                {
+                  type: 'image_url',
+                  image_url: { url: `data:image/png;base64,${base64Data}` }
                 }
-              }
-            ]
-          }
-        ]
+              ]
+            }
+          ]
 
-        let visionModel = this.config.model || 'gpt-4o-mini'
-        if (!visionModel.includes('gpt-4o')) {
-          visionModel = 'gpt-4o-mini'
+          const stream = await client.chat.completions.create({
+            model: 'gpt-4o-mini',
+            messages: messages,
+            max_completion_tokens: this.config.maxTokens || 2000,
+            temperature: this.config.temperature || 0.7,
+            stream: true
+          })
+
+          for await (const chunk of stream) {
+            const content = chunk.choices[0]?.delta?.content || ''
+            if (content) {
+              fullResponse += content
+              this.emit('stream', content)
+            }
+          }
+        } else {
+          // Gemini Multimodal
+          const ai = new GoogleGenAI({ apiKey: attempt.key })
+          const payload = {
+            contents: [
+              {
+                role: 'user',
+                parts: [
+                  { text: promptText },
+                  {
+                    inlineData: {
+                      mimeType: 'image/png',
+                      data: base64Data
+                    }
+                  }
+                ]
+              }
+            ],
+            config: {
+              systemInstruction: solutionPrompt,
+              maxOutputTokens: this.config.maxTokens || 2000,
+              temperature: this.config.temperature || 0.7
+            }
+          }
+
+          let stream
+          try {
+            stream = await ai.models.generateContentStream({
+              model: attempt.model,
+              ...payload
+            })
+          } catch {
+            stream = await ai.models.generateContentStream({
+              model: 'gemini-3.5-flash-lite',
+              ...payload
+            })
+          }
+
+          for await (const chunk of stream) {
+            const content = chunk.text || ''
+            if (content) {
+              fullResponse += content
+              this.emit('stream', content)
+            }
+          }
         }
 
-        const stream = await this.client!.chat.completions.create({
-          model: visionModel,
-          messages: messages,
-          max_completion_tokens: this.config.maxTokens || 2000,
-          temperature: this.config.temperature || 0.7,
-          stream: true
-        })
-
-        for await (const chunk of stream) {
-          const content = chunk.choices[0]?.delta?.content || ''
-          if (content) {
-            fullResponse += content
-            this.emit('stream', content)
-          }
+        this.emit('complete', fullResponse)
+        return fullResponse
+      } catch (err: any) {
+        lastError = err
+        const hasNext = i + 1 < attempts.length
+        if (hasNext) {
+          const next = attempts[i + 1]
+          const warnMsg = `⚠️ Rate limit on vision query for ${attempt.provider.toUpperCase()} Key #${attempt.index}. Auto-switching to ${next.provider.toUpperCase()} Key #${next.index}...`
+          console.warn(warnMsg)
+          this.emit('warn', warnMsg)
+          continue
         }
       }
-
-      this.emit('complete', fullResponse)
-      return fullResponse
-    } catch (error) {
-      this.emit('error', error)
-      throw error
     }
+
+    this.emit('error', lastError)
+    throw lastError
   }
 
   updateConfig(config: Partial<OpenAIConfig>): void {
     this.config = { ...this.config, ...config }
-    if (config.apiKey) {
-      const isGemini = !config.apiKey.trim().startsWith('sk-')
-      if (!isGemini) {
-        this.client = new OpenAI({
-          apiKey: config.apiKey
-        })
-      }
-    }
     if (config.resumeDescription !== undefined) {
       this.systemPrompt = getSystemPrompt(config.resumeDescription || '')
     }

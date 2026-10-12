@@ -1,5 +1,17 @@
-import { AlertCircle, CheckCircle, Coffee, Eye, EyeOff, Loader2, Mic, Save, X } from 'lucide-react'
-import { useEffect, useRef, useState } from 'react'
+import {
+  AlertCircle,
+  CheckCircle,
+  Coffee,
+  Eye,
+  EyeOff,
+  Mic,
+  Plus,
+  Save,
+  Trash2,
+  X,
+  Zap
+} from 'lucide-react'
+import { useState } from 'react'
 import { AppSettings, useInterviewStore } from '../store/interviewStore'
 
 interface ModelOption {
@@ -7,25 +19,179 @@ interface ModelOption {
   name: string
 }
 
-const DEFAULT_MODELS: ModelOption[] = [
-  { id: 'gemini-3.1-flash-lite', name: 'Gemini 3.1 Flash Lite (Recommended & Free)' },
-  { id: 'gemini-3.5-flash-lite', name: 'Gemini 3.5 Flash Lite (Free)' },
-  { id: 'gemini-3.5-flash', name: 'Gemini 3.5 Flash (Free)' },
+const GROQ_MODELS: ModelOption[] = [
+  { id: 'llama-3.3-70b-versatile', name: 'Llama 3.3 70B Versatile (Recommended - Groq LPU)' },
+  { id: 'llama-3.1-8b-instant', name: 'Llama 3.1 8B Instant (Ultra Fast - Groq LPU)' },
+  { id: 'meta-llama/llama-4-scout-17b-16e-instruct', name: 'Llama 4 Scout (Groq LPU)' }
+]
+
+const GEMINI_MODELS: ModelOption[] = [
+  { id: 'gemini-3.5-flash-lite', name: 'Gemini 3.5 Flash Lite (Latest & Highest Free Limits)' },
+  { id: 'gemini-3.1-flash-lite', name: 'Gemini 3.1 Flash Lite (Fast & Free)' },
   { id: 'gemini-3.8-flash', name: 'Gemini 3.8 Flash (Free)' },
+  { id: 'gemini-2.5-flash-lite', name: 'Gemini 2.5 Flash Lite (Free)' },
+  { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash (Free)' }
+]
+
+const OPENAI_MODELS: ModelOption[] = [
   { id: 'gpt-4o-mini', name: 'GPT-4o Mini (OpenAI)' },
   { id: 'gpt-4o', name: 'GPT-4o (OpenAI)' }
 ]
 
-export function SettingsModal(): React.ReactNode | null {
+interface KeyListEditorProps {
+  title: string
+  badge?: string
+  badgeColor?: string
+  linkText: string
+  linkUrl: string
+  description: string
+  keys: string[]
+  onChange: (keys: string[]) => void
+  placeholder: string
+  modelId: string
+  onModelChange: (model: string) => void
+  modelOptions: ModelOption[]
+  modelLabel: string
+}
+
+function KeyListEditor({
+  title,
+  badge,
+  badgeColor = 'text-amber-400 bg-amber-400/10 border-amber-400/20',
+  linkText,
+  linkUrl,
+  description,
+  keys,
+  onChange,
+  placeholder,
+  modelId,
+  onModelChange,
+  modelOptions,
+  modelLabel
+}: KeyListEditorProps): React.JSX.Element {
+  const [showKeyIndex, setShowKeyIndex] = useState<Record<number, boolean>>({})
+
+  const keyList = keys.length > 0 ? keys : ['']
+
+  const handleKeyChange = (index: number, val: string): void => {
+    const updated = [...keyList]
+    updated[index] = val
+    onChange(updated)
+  }
+
+  const handleAddKey = (): void => {
+    onChange([...keyList, ''])
+  }
+
+  const handleRemoveKey = (index: number): void => {
+    const updated = keyList.filter((_, i) => i !== index)
+    onChange(updated.length > 0 ? updated : [''])
+  }
+
+  const toggleShow = (index: number): void => {
+    setShowKeyIndex((prev) => ({ ...prev, [index]: !prev[index] }))
+  }
+
+  return (
+    <div className="p-4 rounded-xl bg-dark-800/80 border border-dark-700 space-y-3">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <label className="text-sm font-semibold text-dark-100">{title}</label>
+          {badge && (
+            <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full border ${badgeColor}`}>
+              {badge}
+            </span>
+          )}
+        </div>
+        <a
+          href={linkUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-xs text-blue-400 hover:text-blue-300 hover:underline font-medium"
+        >
+          {linkText}
+        </a>
+      </div>
+
+      <p className="text-xs text-dark-400">{description}</p>
+
+      {/* Model Selection */}
+      <div className="space-y-1">
+        <label className="text-xs font-medium text-dark-300">{modelLabel}</label>
+        <select
+          value={modelId}
+          onChange={(e) => onModelChange(e.target.value)}
+          className="w-full px-3 py-1.5 bg-dark-900 border border-dark-600 rounded-lg text-xs text-dark-100 focus:outline-none focus:border-blue-500 transition-colors"
+        >
+          {modelOptions.map((m) => (
+            <option key={m.id} value={m.id}>
+              {m.name}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      {/* Keys list */}
+      <div className="space-y-2 pt-1">
+        <label className="text-xs font-medium text-dark-300 flex items-center justify-between">
+          <span>API Keys ({keyList.length})</span>
+          {keyList.length > 1 && (
+            <span className="text-[10px] text-green-400 flex items-center gap-1 font-normal">
+              <CheckCircle size={10} /> Auto-rotates if tokens run out
+            </span>
+          )}
+        </label>
+
+        {keyList.map((keyVal, idx) => (
+          <div key={idx} className="flex items-center gap-2">
+            <div className="relative flex-1">
+              <input
+                type={showKeyIndex[idx] ? 'text' : 'password'}
+                value={keyVal}
+                onChange={(e) => handleKeyChange(idx, e.target.value)}
+                placeholder={`${placeholder} ${idx > 0 ? `(Backup Key #${idx + 1})` : '(Primary)'}`}
+                className="w-full px-3 py-1.5 pr-9 bg-dark-900 border border-dark-600 rounded-lg text-xs text-dark-100 placeholder-dark-500 focus:outline-none focus:border-blue-500 transition-colors"
+              />
+              <button
+                type="button"
+                onClick={() => toggleShow(idx)}
+                className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-dark-400 hover:text-dark-200"
+              >
+                {showKeyIndex[idx] ? <EyeOff size={14} /> : <Eye size={14} />}
+              </button>
+            </div>
+
+            {keyList.length > 1 && (
+              <button
+                type="button"
+                onClick={() => handleRemoveKey(idx)}
+                title="Remove key"
+                className="p-1.5 rounded hover:bg-red-500/10 text-dark-400 hover:text-red-400 transition-colors"
+              >
+                <Trash2 size={14} />
+              </button>
+            )}
+          </div>
+        ))}
+
+        <button
+          type="button"
+          onClick={handleAddKey}
+          className="flex items-center gap-1.5 text-xs text-blue-400 hover:text-blue-300 font-medium pt-1 transition-colors"
+        >
+          <Plus size={13} />
+          <span>Add Another Key (Auto-Token Rotation)</span>
+        </button>
+      </div>
+    </div>
+  )
+}
+
+export function SettingsModal(): React.JSX.Element | null {
   const { settings, showSettings, setShowSettings, setSettings } = useInterviewStore()
   const [localSettings, setLocalSettings] = useState<AppSettings>(settings)
-  const [showOpenAIKey, setShowOpenAIKey] = useState(false)
-  const [showDeepgramKey, setShowDeepgramKey] = useState(false)
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
-  const [models, setModels] = useState<ModelOption[]>([])
-  const [modelsLoading, setModelsLoading] = useState(false)
-  const [modelsError, setModelsError] = useState<string | null>(null)
-  const fetchTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+  const [showDeepgramKey, setShowDeepgramKey] = useState(false)
 
   const [prevSettings, setPrevSettings] = useState(settings)
   if (settings !== prevSettings) {
@@ -33,76 +199,48 @@ export function SettingsModal(): React.ReactNode | null {
     setLocalSettings(settings)
   }
 
-  // Fetch models when API key changes (with debounce)
-  useEffect(() => {
-    // Clear previous timeout
-    if (fetchTimeoutRef.current) {
-      clearTimeout(fetchTimeoutRef.current)
-    }
-
-    const apiKey = localSettings.openaiApiKey?.trim()
-
-    fetchTimeoutRef.current = setTimeout(async () => {
-      // If API key is empty, clear models and error
-      if (!apiKey || apiKey.length === 0) {
-        setModels([])
-        setModelsError(null)
-        setModelsLoading(false)
-        return
-      }
-
-      setModelsLoading(true)
-      setModelsError(null)
-
-      try {
-        const result = await window.api.fetchOpenAIModels(apiKey)
-        if (result.success) {
-          setModels(result.models)
-          setModelsError(null)
-
-          // If current model is not in the list, set to first available model
-          setLocalSettings((prev) => {
-            if (result.models.length > 0 && !result.models.find((m) => m.id === prev.openaiModel)) {
-              return { ...prev, openaiModel: result.models[0].id }
-            }
-            return prev
-          })
-        } else {
-          setModelsError(result.error || 'Failed to fetch models')
-          setModels([])
-        }
-      } catch (err) {
-        const errorMessage = err instanceof Error ? err.message : 'Failed to fetch models'
-        setModelsError(errorMessage)
-        setModels([])
-      } finally {
-        setModelsLoading(false)
-      }
-    }, 800)
-
-    return () => {
-      if (fetchTimeoutRef.current) {
-        clearTimeout(fetchTimeoutRef.current)
-      }
-    }
-  }, [localSettings.openaiApiKey])
-
   if (!showSettings) return null
 
-  const displayModels =
-    models.length > 0
-      ? models
-      : DEFAULT_MODELS.some((m) => m.id === localSettings.openaiModel) || !localSettings.openaiModel
-        ? DEFAULT_MODELS
-        : [{ id: localSettings.openaiModel, name: localSettings.openaiModel }, ...DEFAULT_MODELS]
+  // Ensure arrays exist
+  const groqKeys = localSettings.groqApiKeys && localSettings.groqApiKeys.length > 0
+    ? localSettings.groqApiKeys
+    : localSettings.groqApiKey ? [localSettings.groqApiKey] : ['']
+
+  const geminiKeys = localSettings.geminiApiKeys && localSettings.geminiApiKeys.length > 0
+    ? localSettings.geminiApiKeys
+    : localSettings.geminiApiKey ? [localSettings.geminiApiKey] : ['']
+
+  const openaiKeys = localSettings.openaiApiKeys && localSettings.openaiApiKeys.length > 0
+    ? localSettings.openaiApiKeys
+    : (localSettings.openaiApiKey && localSettings.openaiApiKey.startsWith('sk-')) ? [localSettings.openaiApiKey] : ['']
 
   const handleSave = async (): Promise<void> => {
     try {
       setSaveStatus('saving')
-      const updatedLocalSettings = {
+
+      const cleanGroq = groqKeys.map((k) => k.trim()).filter(Boolean)
+      const cleanGemini = geminiKeys.map((k) => k.trim()).filter(Boolean)
+      const cleanOpenAI = openaiKeys.map((k) => k.trim()).filter(Boolean)
+
+      const primaryGroq = cleanGroq[0] || ''
+      const primaryGemini = cleanGemini[0] || ''
+      const primaryOpenAI = cleanOpenAI[0] || ''
+
+      const fallbackApiKey = primaryGroq || primaryGemini || primaryOpenAI || ''
+
+      const updatedLocalSettings: AppSettings = {
         ...localSettings,
-        openaiModel: localSettings.openaiModel || 'gemini-3.1-flash-lite'
+        groqApiKeys: cleanGroq,
+        geminiApiKeys: cleanGemini,
+        openaiApiKeys: cleanOpenAI,
+        groqApiKey: primaryGroq,
+        geminiApiKey: primaryGemini,
+        openaiApiKey: fallbackApiKey,
+        groqModel: localSettings.groqModel || 'llama-3.3-70b-versatile',
+        geminiModel: localSettings.geminiModel || 'gemini-3.5-flash-lite',
+        openaiModel: localSettings.openaiModel || 'gpt-4o-mini'
       }
+
       const updatedSettings = await window.api.updateSettings(updatedLocalSettings)
       setSettings(updatedSettings as AppSettings)
       setSaveStatus('saved')
@@ -129,14 +267,17 @@ export function SettingsModal(): React.ReactNode | null {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-      <div className="w-full max-w-md mx-4 bg-dark-900 rounded-xl border border-dark-700 shadow-2xl animate-fade-in">
+      <div className="w-full max-w-xl mx-4 bg-dark-900 rounded-xl border border-dark-700 shadow-2xl animate-fade-in flex flex-col max-h-[90vh]">
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-dark-700">
           <div className="flex items-center gap-2.5">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary">
-              <Mic className="h-5 w-5 text-primary-foreground" />
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-600">
+              <Mic className="h-5 w-5 text-white" />
             </div>
-            <h2 className="text-lg font-semibold text-dark-100">Settings</h2>
+            <div>
+              <h2 className="text-base font-semibold text-dark-100">Settings</h2>
+              <p className="text-[11px] text-dark-400">Configure AI providers, models, and token rotation</p>
+            </div>
           </div>
           <button
             onClick={handleClose}
@@ -147,64 +288,88 @@ export function SettingsModal(): React.ReactNode | null {
         </div>
 
         {/* Content */}
-        <div className="px-5 py-6 space-y-5 max-h-[32rem] overflow-y-auto custom-scrollbar">
-          {/* API Key */}
-          <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <label className="block text-sm font-medium text-dark-200">
-                API Key (Gemini / OpenAI)
-              </label>
-              <div className="flex items-center gap-2">
-                <a
-                  href="https://aistudio.google.com/app/apikey"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-xs text-green-400 hover:underline font-medium"
-                >
-                  Get Free Gemini Key →
-                </a>
-              </div>
-            </div>
-            <p className="text-xs text-dark-500">
-              Use a free Google Gemini key (<code className="text-dark-300">AIza... / AQ...</code>) or OpenAI key. Google AI Studio has a 100% free tier.
-            </p>
-            <div className="relative">
-              <input
-                type={showOpenAIKey ? 'text' : 'password'}
-                value={localSettings.openaiApiKey}
-                onChange={(e) =>
-                  setLocalSettings({ ...localSettings, openaiApiKey: e.target.value })
-                }
-                placeholder="Enter Gemini key (AIza... / AQ...) or OpenAI key (sk-...)"
-                className="w-full px-3 py-2 pr-10 bg-dark-800 border border-dark-600 rounded-lg text-sm text-dark-100 placeholder-dark-500 focus:outline-none focus:border-blue-500 transition-colors"
-              />
-              <button
-                type="button"
-                onClick={() => setShowOpenAIKey(!showOpenAIKey)}
-                className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-dark-400 hover:text-dark-200"
-              >
-                {showOpenAIKey ? <EyeOff size={16} /> : <Eye size={16} />}
-              </button>
+        <div className="px-5 py-5 space-y-4 overflow-y-auto custom-scrollbar flex-1">
+          {/* Failover / Token Rotation Banner */}
+          <div className="p-3 rounded-lg bg-blue-950/40 border border-blue-800/40 flex items-start gap-2.5">
+            <Zap className="h-4 w-4 text-amber-400 shrink-0 mt-0.5" />
+            <div className="text-xs text-dark-300 leading-relaxed">
+              <strong className="text-dark-100 font-medium">Automatic Token Rotation:</strong> Add multiple keys
+              for any provider. If one key runs out of daily tokens or rate limits, the app instantly switches
+              to your backup key or falls back to the next provider without dropping your answer!
             </div>
           </div>
 
-          {/* Deepgram API Key (Real-Time Live Streaming) */}
-          <div className="space-y-2">
+          {/* 1. Groq Section */}
+          <KeyListEditor
+            title="Groq (LPU Silicon)"
+            badge="⚡ Instant ~150ms Speed"
+            badgeColor="text-amber-400 bg-amber-400/10 border-amber-400/20"
+            linkText="Get Free Groq Key (No Card) →"
+            linkUrl="https://console.groq.com/keys"
+            description="Ultra-fast LPU inference. Recommended for live job interviews for sub-second answers."
+            keys={groqKeys}
+            onChange={(keys) => setLocalSettings({ ...localSettings, groqApiKeys: keys })}
+            placeholder="gsk_..."
+            modelId={localSettings.groqModel || 'llama-3.3-70b-versatile'}
+            onModelChange={(model) => setLocalSettings({ ...localSettings, groqModel: model })}
+            modelOptions={GROQ_MODELS}
+            modelLabel="Groq Model"
+          />
+
+          {/* 2. Google Gemini Section */}
+          <KeyListEditor
+            title="Google Gemini"
+            badge="100% Free Multimodal"
+            badgeColor="text-green-400 bg-green-400/10 border-green-400/20"
+            linkText="Get Free Gemini Key →"
+            linkUrl="https://aistudio.google.com/app/apikey"
+            description="Google AI Studio provides generous free rate limits for Gemini Flash-Lite and Flash models."
+            keys={geminiKeys}
+            onChange={(keys) => setLocalSettings({ ...localSettings, geminiApiKeys: keys })}
+            placeholder="AIza... or AQ..."
+            modelId={localSettings.geminiModel || 'gemini-3.5-flash-lite'}
+            onModelChange={(model) => setLocalSettings({ ...localSettings, geminiModel: model })}
+            modelOptions={GEMINI_MODELS}
+            modelLabel="Gemini Model"
+          />
+
+          {/* 3. OpenAI / ChatGPT Section */}
+          <KeyListEditor
+            title="OpenAI (ChatGPT)"
+            badge="Standard API"
+            badgeColor="text-blue-400 bg-blue-400/10 border-blue-400/20"
+            linkText="Get OpenAI Key →"
+            linkUrl="https://platform.openai.com/api-keys"
+            description="Use your OpenAI account with GPT-4o Mini or GPT-4o."
+            keys={openaiKeys}
+            onChange={(keys) => setLocalSettings({ ...localSettings, openaiApiKeys: keys })}
+            placeholder="sk-..."
+            modelId={localSettings.openaiModel || 'gpt-4o-mini'}
+            onModelChange={(model) => setLocalSettings({ ...localSettings, openaiModel: model })}
+            modelOptions={OPENAI_MODELS}
+            modelLabel="OpenAI Model"
+          />
+
+          {/* 4. Deepgram Section */}
+          <div className="p-4 rounded-xl bg-dark-800/80 border border-dark-700 space-y-3">
             <div className="flex items-center justify-between">
-              <label className="block text-sm font-medium text-dark-200">
-                Deepgram API Key <span className="text-xs text-blue-400 font-normal">(Nova-2 Live Streaming)</span>
-              </label>
+              <div className="flex items-center gap-2">
+                <label className="text-sm font-semibold text-dark-100">Deepgram STT</label>
+                <span className="text-[10px] font-medium px-2 py-0.5 rounded-full border text-purple-400 bg-purple-400/10 border-purple-400/20">
+                  Nova-2 Live Audio
+                </span>
+              </div>
               <a
                 href="https://console.deepgram.com/signup"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-xs text-blue-400 hover:underline font-medium"
+                className="text-xs text-purple-400 hover:text-purple-300 hover:underline font-medium"
               >
                 Get Free Key ($200 Credit) →
               </a>
             </div>
-            <p className="text-xs text-dark-500">
-              Optional. Enables live speech streaming with ~150ms latency. If left blank, uses Gemini.
+            <p className="text-xs text-dark-400">
+              Optional. Live WebSocket streaming speech recognition with ~150ms latency. If left blank, uses Groq Whisper / Gemini audio.
             </p>
             <div className="relative">
               <input
@@ -213,146 +378,97 @@ export function SettingsModal(): React.ReactNode | null {
                 onChange={(e) =>
                   setLocalSettings({ ...localSettings, deepgramApiKey: e.target.value })
                 }
-                placeholder="Enter Deepgram key for live ~150ms streaming"
-                className="w-full px-3 py-2 pr-10 bg-dark-800 border border-dark-600 rounded-lg text-sm text-dark-100 placeholder-dark-500 focus:outline-none focus:border-blue-500 transition-colors"
+                placeholder="Enter Deepgram API Key"
+                className="w-full px-3 py-1.5 pr-9 bg-dark-900 border border-dark-600 rounded-lg text-xs text-dark-100 placeholder-dark-500 focus:outline-none focus:border-purple-500 transition-colors"
               />
               <button
                 type="button"
                 onClick={() => setShowDeepgramKey(!showDeepgramKey)}
                 className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-dark-400 hover:text-dark-200"
               >
-                {showDeepgramKey ? <EyeOff size={16} /> : <Eye size={16} />}
+                {showDeepgramKey ? <EyeOff size={14} /> : <Eye size={14} />}
               </button>
             </div>
           </div>
 
-          {/* Model */}
-          <div className="space-y-2">
-            <label className="block text-sm font-medium text-dark-200">
-              Answer Generation Model
-            </label>
-            {modelsLoading ? (
-              <div className="w-full px-3 py-2 bg-dark-800 border border-dark-600 rounded-lg animate-pulse">
-                <div className="flex items-center gap-2">
-                  <Loader2 size={16} className="animate-spin text-blue-400" />
-                  <span className="text-sm text-dark-400">Loading models...</span>
-                </div>
-              </div>
-            ) : (
-              <div className="space-y-1">
-                <select
-                  value={localSettings.openaiModel || 'gemini-3.1-flash-lite'}
-                  onChange={(e) =>
-                    setLocalSettings({ ...localSettings, openaiModel: e.target.value })
-                  }
-                  className={`w-full px-3 py-2 bg-dark-800 border ${
-                    modelsError
-                      ? 'border-red-500/50 focus:border-red-500'
-                      : 'border-dark-600 focus:border-blue-500'
-                  } rounded-lg text-sm text-dark-100 focus:outline-none transition-colors`}
-                >
-                  {displayModels.map((model) => (
-                    <option key={model.id} value={model.id}>
-                      {model.name}
-                    </option>
-                  ))}
-                </select>
-                {modelsError ? (
-                  <div className="flex items-center gap-1.5 text-xs text-red-400">
-                    <AlertCircle size={12} />
-                    <span>{modelsError}</span>
-                  </div>
-                ) : !localSettings.openaiApiKey?.trim() ? (
-                  <p className="text-xs text-dark-500">
-                    Default models shown. Gemini 3.1 Flash Lite recommended for fast free responses.
-                  </p>
-                ) : null}
-              </div>
-            )}
-          </div>
-
           {/* Resume Description */}
-          <div className="space-y-2">
-            <label className="block text-sm font-medium text-dark-200">Resume Description</label>
-            <p className="text-xs text-dark-500">
-              Paste your resume content here (JSON, YML format preferably). This will be used to
-              provide context-aware answers. Do not include icons, emojis, or other symbols.
+          <div className="p-4 rounded-xl bg-dark-800/80 border border-dark-700 space-y-2">
+            <label className="text-sm font-semibold text-dark-100">Candidate Resume & Background</label>
+            <p className="text-xs text-dark-400">
+              Paste your experience, projects, and skills. The AI uses this context to tailor first-person answers.
             </p>
             <textarea
               value={localSettings.resumeDescription}
               onChange={(e) =>
                 setLocalSettings({ ...localSettings, resumeDescription: e.target.value })
               }
-              placeholder="Enter your resume content here..."
-              rows={8}
-              className="w-full px-3 py-2 bg-dark-800 border border-dark-600 rounded-lg text-sm text-dark-100 placeholder-dark-500 focus:outline-none focus:border-blue-500 transition-colors resize-y"
+              placeholder="Paste your resume or background summary here..."
+              rows={5}
+              className="w-full px-3 py-2 bg-dark-900 border border-dark-600 rounded-lg text-xs text-dark-100 placeholder-dark-500 focus:outline-none focus:border-blue-500 transition-colors resize-y custom-scrollbar"
             />
           </div>
 
-          {/* Pause Threshold */}
-          <div className="space-y-2">
-            <label className="block text-sm font-medium text-dark-200">
-              Silence Detection
-              <span className="ml-2 text-xs text-dark-400">{localSettings.pauseThreshold}ms</span>
-            </label>
-            <input
-              type="range"
-              min="500"
-              max="3000"
-              step="100"
-              value={localSettings.pauseThreshold}
-              onChange={(e) =>
-                setLocalSettings({ ...localSettings, pauseThreshold: Number(e.target.value) })
-              }
-              className="w-full accent-blue-500"
-            />
-            <p className="text-xs text-dark-500">
-              How long to wait detecting the question for transcription (Recommended : 1500ms)
-            </p>
-          </div>
+          {/* Silence Detection & Window Opacity */}
+          <div className="p-4 rounded-xl bg-dark-800/80 border border-dark-700 space-y-4">
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between text-xs">
+                <span className="font-semibold text-dark-200">Silence Detection</span>
+                <span className="text-dark-400 font-mono">{localSettings.pauseThreshold}ms</span>
+              </div>
+              <input
+                type="range"
+                min="500"
+                max="3000"
+                step="100"
+                value={localSettings.pauseThreshold}
+                onChange={(e) =>
+                  setLocalSettings({ ...localSettings, pauseThreshold: Number(e.target.value) })
+                }
+                className="w-full accent-blue-500"
+              />
+              <p className="text-[11px] text-dark-500">Wait time after speaker pauses before answering (Default: 1500ms)</p>
+            </div>
 
-          {/* Window Opacity */}
-          <div className="space-y-2">
-            <label className="block text-sm font-medium text-dark-200">
-              Window Opacity
-              <span className="ml-2 text-xs text-dark-400">
-                {Math.round(localSettings.windowOpacity * 100)}%
-              </span>
-            </label>
-            <input
-              type="range"
-              min="0.3"
-              max="1"
-              step="0.05"
-              value={localSettings.windowOpacity}
-              onChange={(e) => handleOpacityChange(Number(e.target.value))}
-              className="w-full accent-blue-500"
-            />
+            <div className="space-y-1.5 pt-2 border-t border-dark-700">
+              <div className="flex items-center justify-between text-xs">
+                <span className="font-semibold text-dark-200">Window Opacity</span>
+                <span className="text-dark-400 font-mono">{Math.round(localSettings.windowOpacity * 100)}%</span>
+              </div>
+              <input
+                type="range"
+                min="0.3"
+                max="1"
+                step="0.05"
+                value={localSettings.windowOpacity}
+                onChange={(e) => handleOpacityChange(Number(e.target.value))}
+                className="w-full accent-blue-500"
+              />
+            </div>
           </div>
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-between px-5 py-4 border-t border-dark-700">
+        <div className="flex items-center justify-between px-5 py-3.5 border-t border-dark-700 bg-dark-900">
           <div className="flex items-center gap-3">
             <a
               href="https://buymeacoffee.com"
               target="_blank"
               rel="noopener noreferrer"
-              className="flex items-center gap-2 px-4 py-2 bg-amber-600 hover:bg-amber-500 text-white text-sm font-medium rounded-lg transition-colors"
+              className="flex items-center gap-2 px-3 py-1.5 bg-amber-600/90 hover:bg-amber-600 text-white text-xs font-medium rounded-lg transition-colors"
             >
-              <Coffee size={16} />
+              <Coffee size={14} />
               <span>Buy me a coffee</span>
             </a>
             {saveStatus === 'error' && (
-              <div className="flex items-center gap-2 text-sm text-red-400">
-                <AlertCircle size={16} />
+              <div className="flex items-center gap-1.5 text-xs text-red-400">
+                <AlertCircle size={14} />
                 <span>Failed to save</span>
               </div>
             )}
             {saveStatus === 'saved' && (
-              <div className="flex items-center gap-2 text-sm text-green-400">
-                <CheckCircle size={16} />
-                <span>Saved!</span>
+              <div className="flex items-center gap-1.5 text-xs text-green-400">
+                <CheckCircle size={14} />
+                <span>Saved successfully!</span>
               </div>
             )}
           </div>
@@ -360,17 +476,17 @@ export function SettingsModal(): React.ReactNode | null {
           <div className="flex gap-2">
             <button
               onClick={handleClose}
-              className="px-4 py-2 text-sm font-medium text-dark-300 hover:text-dark-100 transition-colors"
+              className="px-3.5 py-1.5 text-xs font-medium text-dark-300 hover:text-dark-100 transition-colors"
             >
               Cancel
             </button>
             <button
               onClick={handleSave}
               disabled={saveStatus === 'saving'}
-              className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50"
+              className="flex items-center gap-1.5 px-4 py-1.5 bg-blue-600 hover:bg-blue-500 text-white text-xs font-medium rounded-lg transition-colors disabled:opacity-50"
             >
-              <Save size={16} />
-              <span>{saveStatus === 'saving' ? 'Saving...' : 'Save'}</span>
+              <Save size={14} />
+              <span>{saveStatus === 'saving' ? 'Saving...' : 'Save Settings'}</span>
             </button>
           </div>
         </div>

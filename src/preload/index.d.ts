@@ -19,9 +19,20 @@ export interface DetectedQuestionFromImage {
 }
 
 export interface AppSettings {
+  groqApiKeys?: string[]
+  geminiApiKeys?: string[]
+  openaiApiKeys?: string[]
+  deepgramApiKeys?: string[]
+
+  groqApiKey?: string
+  geminiApiKey?: string
   openaiApiKey: string
-  openaiModel: string
   deepgramApiKey?: string
+
+  openaiModel: string
+  groqModel?: string
+  geminiModel?: string
+
   alwaysOnTop: boolean
   windowOpacity: number
   pauseThreshold: number

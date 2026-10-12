@@ -49,13 +49,26 @@ export function initializeIpcHandlers(window: BrowserWindow): void {
   ipcMain.handle('update-settings', (_event, updates: Partial<AppSettings>) => {
     settingsManager?.updateSettings(updates)
 
-    // Reset vision service and update openai service if API key or model changed
-    if (updates.openaiApiKey !== undefined || updates.openaiModel !== undefined) {
+    // Reset vision service and update openai service if API keys or models changed
+    if (
+      updates.groqApiKeys !== undefined ||
+      updates.geminiApiKeys !== undefined ||
+      updates.openaiApiKeys !== undefined ||
+      updates.openaiApiKey !== undefined ||
+      updates.openaiModel !== undefined ||
+      updates.groqModel !== undefined ||
+      updates.geminiModel !== undefined
+    ) {
       visionService = null
       if (openaiService) {
         openaiService.updateConfig({
+          groqApiKeys: updates.groqApiKeys,
+          geminiApiKeys: updates.geminiApiKeys,
+          openaiApiKeys: updates.openaiApiKeys,
           apiKey: updates.openaiApiKey,
           model: updates.openaiModel,
+          groqModel: updates.groqModel,
+          geminiModel: updates.geminiModel,
           resumeDescription: updates.resumeDescription
         })
       }
@@ -76,7 +89,7 @@ export function initializeIpcHandlers(window: BrowserWindow): void {
     return settingsManager?.hasApiKeys()
   })
 
-  // Fetch AI models (Gemini & OpenAI)
+  // Fetch AI models (Groq, Gemini & OpenAI)
   ipcMain.handle('fetch-openai-models', async (_event, apiKey: string) => {
     try {
       if (!apiKey || apiKey.trim().length === 0) {
@@ -85,62 +98,93 @@ export function initializeIpcHandlers(window: BrowserWindow): void {
 
       const trimmedKey = apiKey.trim()
 
-      // Handle Google Gemini API Keys (both legacy AIza and new AQ. auth keys)
-      if (!trimmedKey.startsWith('sk-')) {
-        const defaultGeminiModels = [
-          { id: 'gemini-3.1-flash-lite', name: 'Gemini 3.1 Flash Lite (Recommended & Free)' },
-          { id: 'gemini-3.5-flash-lite', name: 'Gemini 3.5 Flash Lite (Free)' },
-          { id: 'gemini-3.5-flash', name: 'Gemini 3.5 Flash (Free)' },
-          { id: 'gemini-3.8-flash', name: 'Gemini 3.8 Flash (Free)' }
+      // Handle Groq API Keys (starts with gsk_)
+      if (trimmedKey.startsWith('gsk_')) {
+        const defaultGroqModels = [
+          { id: 'llama-3.3-70b-versatile', name: 'Llama 3.3 70B Versatile (Groq LPU - Fastest & Free)' },
+          { id: 'llama-3.1-8b-instant', name: 'Llama 3.1 8B Instant (Groq LPU - Ultra Fast)' },
+          { id: 'llama-3.2-11b-vision-preview', name: 'Llama 3.2 11B Vision (Groq LPU - Free)' }
         ]
 
         try {
-          const resp = await fetch(
-            `https://generativelanguage.googleapis.com/v1beta/models?key=${trimmedKey}`
-          )
-          if (resp.ok) {
-            const data = (await resp.json()) as {
-              models?: Array<{ name: string; displayName?: string; supportedGenerationMethods?: string[] }>
-            }
-            if (data.models && data.models.length > 0) {
-              const fetched = data.models
-                .filter((m) => m.name.includes('gemini') && m.supportedGenerationMethods?.includes('generateContent'))
-                .map((m) => {
-                  const id = m.name.replace('models/', '')
-                  return { id, name: m.displayName ? `${m.displayName} (${id})` : id }
-                })
-              if (fetched.length > 0) {
-                // Filter out deprecated models and place gemini-3.1-flash-lite first
-                const valid = fetched.filter((m) => !m.id.includes('2.0') && m.id !== 'gemini-2.5-flash')
-                const without31 = valid.filter((m) => m.id !== 'gemini-3.1-flash-lite')
-                const combined = [
-                  { id: 'gemini-3.1-flash-lite', name: 'Gemini 3.1 Flash Lite (Recommended & Free)' },
-                  ...without31
-                ]
-                return { success: true, models: combined }
-              }
-            }
+          const OpenAI = (await import('openai')).default
+          const client = new OpenAI({
+            apiKey: trimmedKey,
+            baseURL: 'https://api.groq.com/openai/v1'
+          })
+          const response = await client.models.list()
+          const groqModels = response.data
+            .filter((m) => m.id.includes('llama') || m.id.includes('mixtral') || m.id.includes('gemma'))
+            .map((m) => ({ id: m.id, name: `${m.id} (Groq LPU)` }))
+          if (groqModels.length > 0) {
+            const priorityIds = ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'llama-3.2-11b-vision-preview']
+            const top = priorityIds
+              .map((id) => groqModels.find((m) => m.id === id) || defaultGroqModels.find((m) => m.id === id)!)
+              .filter(Boolean)
+            const rest = groqModels.filter((m) => !priorityIds.includes(m.id))
+            return { success: true, models: [...top, ...rest] }
           }
         } catch {
-          // Fall back to predefined list if network/parsing error
+          // Fall back to default Groq models
         }
 
-        return { success: true, models: defaultGeminiModels }
+        return { success: true, models: defaultGroqModels }
       }
 
-      // Handle OpenAI API Keys
-      const OpenAI = (await import('openai')).default
-      const client = new OpenAI({ apiKey: trimmedKey })
+      // Handle OpenAI API Keys (starts with sk-)
+      if (trimmedKey.startsWith('sk-')) {
+        const OpenAI = (await import('openai')).default
+        const client = new OpenAI({ apiKey: trimmedKey })
+        const response = await client.models.list()
+        const chatModels = response.data
+          .filter((model) => model.id.includes('gpt'))
+          .map((model) => ({
+            id: model.id,
+            name: model.id
+          }))
+        return {
+          success: true,
+          models: chatModels.length > 0 ? chatModels : [
+            { id: 'gpt-4o-mini', name: 'GPT-4o Mini (OpenAI)' },
+            { id: 'gpt-4o', name: 'GPT-4o (OpenAI)' }
+          ]
+        }
+      }
 
-      const response = await client.models.list()
+      // Handle Google Gemini API Keys
+      const defaultGeminiModels = [
+        { id: 'gemini-3.5-flash-lite', name: 'Gemini 3.5 Flash Lite (Latest & Highest Free Limit)' },
+        { id: 'gemini-3.1-flash-lite', name: 'Gemini 3.1 Flash Lite (Fast & Free)' },
+        { id: 'gemini-3.8-flash', name: 'Gemini 3.8 Flash (Free)' },
+        { id: 'gemini-2.5-flash-lite', name: 'Gemini 2.5 Flash Lite (Free)' },
+        { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash (Free)' }
+      ]
 
-      // Filter for chat completion models and sort them
-      const chatModels = response.data.map((model) => ({
-        id: model.id,
-        name: model.id
-      }))
+      try {
+        const resp = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models?key=${trimmedKey}`
+        )
+        if (resp.ok) {
+          const data = (await resp.json()) as {
+            models?: Array<{ name: string; displayName?: string; supportedGenerationMethods?: string[] }>
+          }
+          if (data.models && data.models.length > 0) {
+            const fetched = data.models
+              .filter((m) => m.name.includes('gemini') && m.supportedGenerationMethods?.includes('generateContent'))
+              .map((m) => {
+                const id = m.name.replace('models/', '')
+                return { id, name: m.displayName ? `${m.displayName} (${id})` : id }
+              })
+            if (fetched.length > 0) {
+              return { success: true, models: fetched }
+            }
+          }
+        }
+      } catch {
+        // Fall back to default
+      }
 
-      return { success: true, models: chatModels }
+      return { success: true, models: defaultGeminiModels }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Failed to fetch models'
       console.error('Error fetching AI models:', errorMessage)
@@ -188,20 +232,32 @@ export function initializeIpcHandlers(window: BrowserWindow): void {
         })
         activeSttService = deepgramService
       } else {
-        console.log('===> Using Gemini/Whisper audio transcription')
-        sendAppLog('info', 'STT', 'Initializing Gemini/Whisper STT...')
+        const groqKey = (settings.groqApiKeys && settings.groqApiKeys[0]) || settings.groqApiKey || ''
+        const openaiKey = (settings.openaiApiKeys && settings.openaiApiKeys[0]) || (settings.openaiApiKey?.startsWith('sk-') ? settings.openaiApiKey : '')
+        const geminiKey = (settings.geminiApiKeys && settings.geminiApiKeys[0]) || settings.geminiApiKey || settings.openaiApiKey || ''
+        const sttKey = groqKey || openaiKey || geminiKey
+        const isGroq = Boolean(groqKey)
+        const isOpenAI = !isGroq && Boolean(openaiKey)
+        const sttName = isGroq ? 'Groq Whisper' : isOpenAI ? 'OpenAI Whisper' : 'Gemini STT'
+        console.log(`===> Using ${sttName} audio transcription`)
+        sendAppLog('info', 'STT', `Initializing ${sttName}...`)
         whisperService = new WhisperService({
-          apiKey: settings.openaiApiKey,
-          model: settings.openaiModel || 'gemini-3.1-flash-lite',
+          apiKey: sttKey,
+          model: settings.openaiModel,
           language: 'en'
         })
         activeSttService = whisperService
       }
 
-      // Initialize OpenAI service for answer generation
+      // Initialize OpenAI/Groq/Gemini service for answer generation with multi-key failover
       openaiService = new OpenAIService({
+        groqApiKeys: settings.groqApiKeys,
+        geminiApiKeys: settings.geminiApiKeys,
+        openaiApiKeys: settings.openaiApiKeys,
         apiKey: settings.openaiApiKey,
         model: settings.openaiModel,
+        groqModel: settings.groqModel,
+        geminiModel: settings.geminiModel,
         resumeDescription: settings.resumeDescription
       })
 
@@ -210,8 +266,12 @@ export function initializeIpcHandlers(window: BrowserWindow): void {
         mainWindow?.webContents.send('answer-stream', chunk)
       })
 
+      openaiService.on('warn', (warnMsg: string) => {
+        sendAppLog('warn', 'Failover', warnMsg)
+      })
+
       openaiService.on('complete', (answer) => {
-        sendAppLog('success', 'Gemini', `Generated answer (${answer.length} chars)`)
+        sendAppLog('success', 'AI', `Generated answer (${answer.length} chars)`)
         mainWindow?.webContents.send('answer-complete', answer)
       })
 
@@ -498,27 +558,39 @@ export function initializeIpcHandlers(window: BrowserWindow): void {
   ipcMain.handle('analyze-screenshot', async (_event, imageData: string) => {
     const settings = settingsManager?.getSettings()
 
-    if (!settings?.openaiApiKey) {
+    if (!settingsManager?.hasApiKeys()) {
       return {
         success: false,
-        error: 'API key not configured. Please add your Gemini or OpenAI API key in Settings.'
+        error: 'API key not configured. Please add an API key in Settings.'
       }
     }
 
     try {
+      const activeKey =
+        (settings?.groqApiKeys && settings.groqApiKeys[0]) ||
+        (settings?.geminiApiKeys && settings.geminiApiKeys[0]) ||
+        (settings?.openaiApiKeys && settings.openaiApiKeys[0]) ||
+        settings?.openaiApiKey ||
+        ''
+
       // Initialize services if needed
       if (!visionService) {
         visionService = new VisionService({
-          apiKey: settings.openaiApiKey,
+          apiKey: activeKey,
           model: 'gpt-4o'
         })
       }
 
       if (!openaiService) {
         openaiService = new OpenAIService({
-          apiKey: settings.openaiApiKey,
-          model: settings.openaiModel,
-          resumeDescription: settings.resumeDescription
+          groqApiKeys: settings?.groqApiKeys,
+          geminiApiKeys: settings?.geminiApiKeys,
+          openaiApiKeys: settings?.openaiApiKeys,
+          apiKey: settings?.openaiApiKey,
+          model: settings?.openaiModel,
+          groqModel: settings?.groqModel,
+          geminiModel: settings?.geminiModel,
+          resumeDescription: settings?.resumeDescription
         })
 
         // Set up OpenAI event listeners
