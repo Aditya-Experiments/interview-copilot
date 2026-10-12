@@ -16,9 +16,20 @@ export interface AnswerEntry {
 }
 
 export interface AppSettings {
+  groqApiKeys?: string[]
+  geminiApiKeys?: string[]
+  openaiApiKeys?: string[]
+  deepgramApiKeys?: string[]
+
+  groqApiKey?: string
+  geminiApiKey?: string
   openaiApiKey: string
-  openaiModel: string
   deepgramApiKey?: string
+
+  openaiModel: string
+  groqModel?: string
+  geminiModel?: string
+
   alwaysOnTop: boolean
   windowOpacity: number
   pauseThreshold: number
@@ -115,8 +126,16 @@ interface InterviewState {
 }
 
 const DEFAULT_SETTINGS: AppSettings = {
+  groqApiKeys: [],
+  geminiApiKeys: [],
+  openaiApiKeys: [],
+  deepgramApiKeys: [],
+  groqApiKey: '',
+  geminiApiKey: '',
   openaiApiKey: '',
-  openaiModel: 'gemini-3.1-flash-lite',
+  openaiModel: 'llama-3.3-70b-versatile',
+  groqModel: 'llama-3.3-70b-versatile',
+  geminiModel: 'gemini-3.5-flash-lite',
   deepgramApiKey: '',
   alwaysOnTop: true,
   windowOpacity: 1.0,

@@ -34,9 +34,14 @@ export class WhisperService extends EventEmitter {
   constructor(config: WhisperConfig) {
     super()
     this.config = config
-    const isGemini = !config.apiKey?.trim().startsWith('sk-')
-    if (!isGemini) {
-      this.client = new OpenAI({ apiKey: config.apiKey })
+    const apiKeyTrimmed = config.apiKey?.trim() || ''
+    if (apiKeyTrimmed.startsWith('gsk_')) {
+      this.client = new OpenAI({
+        apiKey: apiKeyTrimmed,
+        baseURL: 'https://api.groq.com/openai/v1'
+      })
+    } else if (apiKeyTrimmed.startsWith('sk-')) {
+      this.client = new OpenAI({ apiKey: apiKeyTrimmed })
     }
   }
 
@@ -151,13 +156,36 @@ export class WhisperService extends EventEmitter {
       const wavBuffer = this.createWavBuffer(combinedBuffer)
 
       let text = ''
-      const isGemini =
-        !this.config.apiKey?.trim().startsWith('sk-') ||
-        (this.config.model && this.config.model.toLowerCase().includes('gemini'))
+      const apiKeyTrimmed = (this.config.apiKey || '').trim()
+      const isGroq = apiKeyTrimmed.startsWith('gsk_')
+      const isOpenAI = apiKeyTrimmed.startsWith('sk-')
 
-      if (isGemini) {
+      if (isGroq || isOpenAI) {
+        if (!this.client) {
+          throw new Error('STT client not initialized')
+        }
+
+        const tempFile = path.join(os.tmpdir(), `whisper_${Date.now()}.wav`)
+        fs.writeFileSync(tempFile, wavBuffer)
+
+        const sttModel = isGroq ? 'whisper-large-v3-turbo' : (this.config.model || 'whisper-1')
+        console.log(`===> Sending ${(durationMs / 1000).toFixed(2)}s of audio to ${isGroq ? 'Groq Whisper' : 'OpenAI Whisper'} (${sttModel})...`)
+
+        const transcription = await this.client.audio.transcriptions.create({
+          file: fs.createReadStream(tempFile),
+          model: sttModel,
+          language: this.config.language || 'en',
+          response_format: 'json'
+        })
+
+        if (fs.existsSync(tempFile)) {
+          fs.unlinkSync(tempFile)
+        }
+
+        text = transcription.text?.trim() || ''
+      } else {
         console.log(`===> Sending ${(durationMs / 1000).toFixed(2)}s of audio to Gemini Audio API...`)
-        const ai = new GoogleGenAI({ apiKey: this.config.apiKey?.trim() })
+        const ai = new GoogleGenAI({ apiKey: apiKeyTrimmed })
         const parts = [
           {
             inlineData: {
@@ -172,55 +200,20 @@ export class WhisperService extends EventEmitter {
 
         let response
         try {
-          // gemini-3.5-flash-lite is the fastest multimodal model (~1.3s response time)
           response = await ai.models.generateContent({
-            model: 'gemini-3.5-flash-lite',
+            model: 'gemini-2.5-flash-lite',
             contents: [{ role: 'user', parts }],
             config: { temperature: 0.0 }
           })
         } catch {
-          // Fallback to gemini-3.5-flash or gemini-3.1-flash-lite
-          try {
-            response = await ai.models.generateContent({
-              model: 'gemini-3.5-flash',
-              contents: [{ role: 'user', parts }],
-              config: { temperature: 0.0 }
-            })
-          } catch {
-            response = await ai.models.generateContent({
-              model: 'gemini-3.1-flash-lite',
-              contents: [{ role: 'user', parts }],
-              config: { temperature: 0.0 }
-            })
-          }
+          response = await ai.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: [{ role: 'user', parts }],
+            config: { temperature: 0.0 }
+          })
         }
 
         text = response.text?.trim() || ''
-      } else {
-        if (!this.client) {
-          throw new Error('OpenAI client not initialized')
-        }
-
-        // Write to temp file (OpenAI API requires a file)
-        const tempFile = path.join(os.tmpdir(), `whisper_${Date.now()}.wav`)
-        fs.writeFileSync(tempFile, wavBuffer)
-
-        console.log(`===> Sending ${(durationMs / 1000).toFixed(2)}s of audio to Whisper...`)
-
-        // Send to Whisper API
-        const transcription = await this.client.audio.transcriptions.create({
-          file: fs.createReadStream(tempFile),
-          model: this.config.model || 'whisper-1',
-          language: this.config.language || 'en',
-          response_format: 'json'
-        })
-
-        // Clean up temp file
-        if (fs.existsSync(tempFile)) {
-          fs.unlinkSync(tempFile)
-        }
-
-        text = transcription.text?.trim() || ''
       }
 
       if (text && text.length > 0) {
