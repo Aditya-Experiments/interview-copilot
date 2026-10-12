@@ -155,7 +155,7 @@ export const useInterviewStore = create<InterviewState>((set, get) => ({
       isGenerating: true
     })),
 
-  setCurrentQuestion: (question) => set({ currentQuestion: question }),
+  setCurrentQuestion: (question) => set({ currentQuestion: question, isGenerating: true }),
 
   finalizeAnswer: async () => {
     const state = get()

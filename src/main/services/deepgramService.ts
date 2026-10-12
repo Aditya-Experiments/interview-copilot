@@ -43,8 +43,8 @@ export class DeepgramService extends EventEmitter {
         channels: 1 as any,
         smart_format: 'true' as any,
         interim_results: 'true' as any,
-        endpointing: 300 as any,
-        utterance_end_ms: 1000 as any,
+        endpointing: 250 as any,
+        utterance_end_ms: 600 as any,
         vad_events: 'true' as any,
         reconnectAttempts: 3
       } as any)

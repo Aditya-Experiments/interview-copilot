@@ -213,8 +213,8 @@ export class OpenAIService extends EventEmitter {
 
       if (isGemini) {
         let model = this.config.model || 'gemini-3.1-flash-lite'
-        // Remap any deprecated model names to current equivalents
-        if (model.includes('2.0')) {
+        // Gemini 2.0 / 1.5 are deprecated/dead, use Gemini 3
+        if (model.includes('2.0') || model.includes('1.5')) {
           model = 'gemini-3.1-flash-lite'
         }
         const ai = new GoogleGenAI({ apiKey: this.config.apiKey?.trim() })
@@ -223,27 +223,39 @@ export class OpenAIService extends EventEmitter {
           parts: [{ text: msg.content }]
         }))
 
+        // Disable thinking budget to eliminate the 5-10s reasoning pause and stream immediately
+        const createStream = async (targetModel: string) => {
+          try {
+            return await ai.models.generateContentStream({
+              model: targetModel,
+              contents: contents,
+              config: {
+                systemInstruction: this.systemPrompt,
+                maxOutputTokens: this.config.maxTokens || 500,
+                temperature: this.config.temperature || 0.7,
+                thinkingConfig: {
+                  thinkingBudget: 0
+                }
+              }
+            })
+          } catch {
+            return await ai.models.generateContentStream({
+              model: targetModel,
+              contents: contents,
+              config: {
+                systemInstruction: this.systemPrompt,
+                maxOutputTokens: this.config.maxTokens || 500,
+                temperature: this.config.temperature || 0.7
+              }
+            })
+          }
+        }
+
         let stream
         try {
-          stream = await ai.models.generateContentStream({
-            model: model,
-            contents: contents,
-            config: {
-              systemInstruction: this.systemPrompt,
-              maxOutputTokens: this.config.maxTokens || 500,
-              temperature: this.config.temperature || 0.7
-            }
-          })
+          stream = await createStream(model)
         } catch {
-          stream = await ai.models.generateContentStream({
-            model: 'gemini-3.1-flash-lite',
-            contents: contents,
-            config: {
-              systemInstruction: this.systemPrompt,
-              maxOutputTokens: this.config.maxTokens || 500,
-              temperature: this.config.temperature || 0.7
-            }
-          })
+          stream = await createStream('gemini-3.1-flash-lite')
         }
 
         for await (const chunk of stream) {
@@ -350,7 +362,10 @@ First, identify what the question is asking, then provide:
           config: {
             systemInstruction: solutionPrompt,
             maxOutputTokens: this.config.maxTokens || 2000,
-            temperature: this.config.temperature || 0.7
+            temperature: this.config.temperature || 0.7,
+            thinkingConfig: {
+              thinkingBudget: 0
+            }
           }
         }
 

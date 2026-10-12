@@ -83,10 +83,10 @@ const IGNORE_PATTERNS = [
 
 export class QuestionDetector extends EventEmitter {
   private transcriptBuffer: string[] = []
-  private minQuestionLength = 20 // Minimum characters for a valid question
-  private minWordCount = 4 // Minimum words for a valid question
-  private confidenceThreshold = 0.6 // Higher threshold for question detection
-  private earlyDetectionThreshold = 0.8 // Higher threshold for early detection (without waiting)
+  private minQuestionLength = 15 // Minimum characters for a valid question
+  private minWordCount = 3 // Minimum words for a valid question
+  private confidenceThreshold = 0.45 // Lower threshold for question detection
+  private earlyDetectionThreshold = 0.60 // Early detection threshold for immediate answer generation
   private lastEarlyDetection: string | null = null // Track last early detection to avoid duplicates
 
   constructor() {
@@ -124,7 +124,7 @@ export class QuestionDetector extends EventEmitter {
 
     const detection = this.analyzeQuestion(trimmedText)
 
-    // Only trigger early if very high confidence
+    // Trigger early if confident question
     if (detection.confidence >= this.earlyDetectionThreshold) {
       console.log(
         `[QuestionDetector] ⚡ EARLY DETECTION: "${trimmedText}" (confidence: ${detection.confidence.toFixed(2)})`
@@ -176,7 +176,7 @@ export class QuestionDetector extends EventEmitter {
       console.log(`[QuestionDetector] ✓ QUESTION DETECTED: "${fullText}"`)
       this.emit('questionDetected', detection)
     } else {
-      console.log(`[QuestionDetector] ✗ Not a question (confidence too low)`)
+      console.log(`[QuestionDetector] ✗ Not a question (confidence too low: ${detection.confidence.toFixed(2)})`)
     }
   }
 
@@ -193,19 +193,19 @@ export class QuestionDetector extends EventEmitter {
     let confidence = 0
     let questionType: DetectedQuestion['questionType'] = 'unknown'
 
-    // Check for question mark (highest confidence indicator)
-    if (text.includes('?')) {
-      confidence += 0.5
-      questionType = 'direct'
-    }
-
-    // Check question starters
+    // Check question starters (Wh-questions, modal questions, imperatives)
     for (const pattern of QUESTION_STARTERS) {
       if (pattern.test(text)) {
-        confidence += 0.35
+        confidence += 0.50
         if (questionType === 'unknown') questionType = 'direct'
         break
       }
+    }
+
+    // Check for question mark (highest confidence indicator)
+    if (text.includes('?')) {
+      confidence += 0.35
+      questionType = 'direct'
     }
 
     // Check question endings
@@ -219,7 +219,7 @@ export class QuestionDetector extends EventEmitter {
     // Check interview-specific patterns (strong indicator)
     for (const pattern of INTERVIEW_PATTERNS) {
       if (pattern.test(text)) {
-        confidence += 0.4
+        confidence += 0.35
         questionType = 'direct'
         break
       }
@@ -227,17 +227,17 @@ export class QuestionDetector extends EventEmitter {
 
     // Check for imperative interview requests (tell me, describe, explain)
     if (/^(tell|describe|explain|share|give|walk)\b/i.test(text)) {
-      confidence += 0.3
+      confidence += 0.25
       questionType = 'indirect'
     }
 
-    // Boost confidence for longer, more complex sentences (likely real questions)
+    // Boost confidence for multi-word questions
     const wordCount = text.split(/\s+/).length
-    if (wordCount >= 8) {
-      confidence += 0.1
+    if (wordCount >= 4) {
+      confidence += 0.10
     }
-    if (wordCount >= 12) {
-      confidence += 0.1
+    if (wordCount >= 8) {
+      confidence += 0.10
     }
 
     // Normalize confidence to max 1.0
