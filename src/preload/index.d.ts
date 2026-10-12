@@ -64,6 +64,12 @@ export interface Api {
   setWindowOpacity: (value: number) => Promise<number>
   minimizeWindow: () => Promise<void>
   closeWindow: () => Promise<void>
+  setIgnoreMouseEvents: (ignore: boolean, forward?: boolean) => Promise<boolean>
+  sendRendererLog: (log: {
+    level: 'info' | 'warn' | 'error' | 'success'
+    source: string
+    message: string
+  }) => Promise<boolean>
 
   // Conversation
   clearHistory: () => Promise<{ success: boolean }>
@@ -110,6 +116,15 @@ export interface Api {
     callback: (question: DetectedQuestionFromImage) => void
   ) => () => void
   onScreenshotNoQuestion: (callback: (data: { message: string }) => void) => () => void
+  onAppLog: (
+    callback: (log: {
+      id: string
+      timestamp: number
+      level: 'info' | 'warn' | 'error' | 'success'
+      source: string
+      message: string
+    }) => void
+  ) => () => void
 }
 
 declare global {

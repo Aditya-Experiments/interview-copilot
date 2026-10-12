@@ -92,8 +92,12 @@ export class DeepgramService extends EventEmitter {
       })
 
       // In Deepgram SDK v5, connect() activates the start-closed socket
-      this.connection.connect()
-      await this.connection.waitForOpen()
+      if (typeof this.connection.connect === 'function') {
+        this.connection.connect()
+      }
+      if (typeof this.connection.waitForOpen === 'function') {
+        await this.connection.waitForOpen()
+      }
 
       // Send keep-alive ping every 8 seconds if no audio is streamed
       this.keepAliveInterval = setInterval(() => {

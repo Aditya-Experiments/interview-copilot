@@ -26,6 +26,14 @@ export interface AppSettings {
   resumeDescription: string
 }
 
+export interface AppLogEntry {
+  id: string
+  timestamp: number
+  level: 'info' | 'warn' | 'error' | 'success'
+  source: string
+  message: string
+}
+
 interface InterviewState {
   // Status
   isCapturing: boolean
@@ -33,6 +41,9 @@ interface InterviewState {
   isSpeaking: boolean
   isGenerating: boolean
   isProcessingScreenshot: boolean
+
+  // Click-through / ghost mode (answers & live transcripts untouchable)
+  isClickThrough: boolean
 
   // Transcripts
   transcripts: TranscriptEntry[]
@@ -49,6 +60,10 @@ interface InterviewState {
 
   // History view
   showHistory: boolean
+
+  // Developer mode live logs
+  showDevLogs: boolean
+  logs: AppLogEntry[]
 
   // Session timer
   isSessionActive: boolean
@@ -81,6 +96,15 @@ interface InterviewState {
 
   setShowHistory: (show: boolean) => void
 
+  // Click-through / ghost mode actions
+  setClickThrough: (value: boolean) => void
+  toggleClickThrough: () => void
+
+  // Developer mode live logs actions
+  setShowDevLogs: (show: boolean) => void
+  addLog: (log: AppLogEntry) => void
+  clearLogs: () => void
+
   // Session timer actions
   startSession: () => void
   endSession: () => void
@@ -108,6 +132,7 @@ export const useInterviewStore = create<InterviewState>((set, get) => ({
   isSpeaking: false,
   isGenerating: false,
   isProcessingScreenshot: false,
+  isClickThrough: false,
 
   transcripts: [],
   currentTranscript: '',
@@ -119,6 +144,8 @@ export const useInterviewStore = create<InterviewState>((set, get) => ({
   settings: DEFAULT_SETTINGS,
   showSettings: false,
   showHistory: false,
+  showDevLogs: false,
+  logs: [],
 
   isSessionActive: true,
   sessionStartTime: null,
@@ -132,6 +159,16 @@ export const useInterviewStore = create<InterviewState>((set, get) => ({
   setSpeaking: (isSpeaking) => set({ isSpeaking }),
   setGenerating: (isGenerating) => set({ isGenerating }),
   setProcessingScreenshot: (processing) => set({ isProcessingScreenshot: processing }),
+
+  setClickThrough: (value) => set({ isClickThrough: value }),
+  toggleClickThrough: () => set((state) => ({ isClickThrough: !state.isClickThrough })),
+
+  setShowDevLogs: (show) => set({ showDevLogs: show }),
+  addLog: (log) =>
+    set((state) => ({
+      logs: [...state.logs.slice(-200), log] // Keep last 200 log entries
+    })),
+  clearLogs: () => set({ logs: [] }),
 
   addTranscript: (entry) =>
     set((state) => ({
