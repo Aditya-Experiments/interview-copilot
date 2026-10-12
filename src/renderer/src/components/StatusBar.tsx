@@ -41,7 +41,7 @@ export function StatusBar(): React.JSX.Element {
   const hasContent = answers.length > 0 || currentAnswer
 
   return (
-    <div className="px-3 py-0.5 bg-dark-850 border-b border-dark-700">
+    <div data-interactive="true" className="px-3 py-0.5 bg-dark-850 border-b border-dark-700">
       {/* Main Controls Row */}
       <div className="flex items-center justify-between gap-3 min-h-[32px]">
         {/* Status Indicator - Left */}

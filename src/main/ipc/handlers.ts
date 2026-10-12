@@ -21,6 +21,20 @@ let visionService: VisionService | null = null
 let mainWindow: BrowserWindow | null = null
 let isCapturing = false
 
+export function sendAppLog(
+  level: 'info' | 'warn' | 'error' | 'success',
+  source: string,
+  message: string
+): void {
+  mainWindow?.webContents.send('app-log', {
+    id: `${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+    timestamp: Date.now(),
+    level,
+    source,
+    message
+  })
+}
+
 export function initializeIpcHandlers(window: BrowserWindow): void {
   mainWindow = window
   settingsManager = new SettingsManager()
@@ -144,6 +158,7 @@ export function initializeIpcHandlers(window: BrowserWindow): void {
     })
 
     if (!settings?.openaiApiKey) {
+      sendAppLog('error', 'System', 'API key not configured in Settings.')
       throw new Error('API key not configured. Please add your Gemini or OpenAI API key in Settings.')
     }
 
@@ -167,15 +182,17 @@ export function initializeIpcHandlers(window: BrowserWindow): void {
 
       if (useDeepgram) {
         console.log('===> Using Deepgram Nova-2 live WebSocket streaming')
+        sendAppLog('info', 'STT', 'Initializing Deepgram Nova-2 live WebSocket...')
         deepgramService = new DeepgramService({
           apiKey: settings.deepgramApiKey!.trim()
         })
         activeSttService = deepgramService
       } else {
         console.log('===> Using Gemini/Whisper audio transcription')
+        sendAppLog('info', 'STT', 'Initializing Gemini/Whisper STT...')
         whisperService = new WhisperService({
           apiKey: settings.openaiApiKey,
-          model: 'whisper-1',
+          model: settings.openaiModel || 'gemini-3.1-flash-lite',
           language: 'en'
         })
         activeSttService = whisperService
@@ -194,12 +211,14 @@ export function initializeIpcHandlers(window: BrowserWindow): void {
       })
 
       openaiService.on('complete', (answer) => {
+        sendAppLog('success', 'Gemini', `Generated answer (${answer.length} chars)`)
         mainWindow?.webContents.send('answer-complete', answer)
       })
 
       // Set up STT event listeners
       activeSttService.on('transcript', async (event) => {
         console.log('Transcript received:', event.text)
+        sendAppLog('info', 'STT', `[${event.isFinal ? 'FINAL' : 'LIVE'}] ${event.text}`)
         questionDetector?.addTranscript(event.text, event.isFinal)
         mainWindow?.webContents.send('transcript', event)
 
@@ -208,11 +227,15 @@ export function initializeIpcHandlers(window: BrowserWindow): void {
           const earlyDetection = questionDetector.checkEarlyDetection(event.text)
           if (earlyDetection) {
             console.log('Early question detection triggered:', earlyDetection.text)
+            sendAppLog('success', 'Detector', `⚡ Early question detected: "${earlyDetection.text}"`)
             mainWindow?.webContents.send('question-detected', earlyDetection)
             try {
+              sendAppLog('info', 'Gemini', `Streaming answer for: "${earlyDetection.text.slice(0, 50)}..."`)
               await openaiService.generateAnswer(earlyDetection.text)
             } catch (error) {
-              mainWindow?.webContents.send('answer-error', (error as Error).message)
+              const errMsg = (error as Error).message
+              sendAppLog('error', 'Gemini', `Answer error: ${errMsg}`)
+              mainWindow?.webContents.send('answer-error', errMsg)
             }
           }
         }
@@ -220,30 +243,41 @@ export function initializeIpcHandlers(window: BrowserWindow): void {
 
       activeSttService.on('utteranceEnd', () => {
         console.log('Processing utterance...')
+        sendAppLog('info', 'Audio', 'Utterance pause detected')
         questionDetector?.onUtteranceEnd()
         mainWindow?.webContents.send('utterance-end')
       })
 
       activeSttService.on('speechStarted', () => {
+        sendAppLog('info', 'Audio', 'Speech started')
         mainWindow?.webContents.send('speech-started')
+      })
+
+      activeSttService.on('started', () => {
+        sendAppLog('success', 'STT', 'STT stream connection opened and ready')
       })
 
       activeSttService.on('error', (error) => {
         const errorMessage = error instanceof Error ? error.message : String(error)
         console.error('STT error:', errorMessage)
+        sendAppLog('error', 'STT', `STT error: ${errorMessage}`)
         mainWindow?.webContents.send('capture-error', errorMessage)
       })
 
       // Set up question detector listener ONCE
       questionDetector?.on('questionDetected', async (detection) => {
         console.log('Question detected:', detection.text)
+        sendAppLog('success', 'Detector', `Question detected: "${detection.text}" (${(detection.confidence * 100).toFixed(0)}% conf)`)
         mainWindow?.webContents.send('question-detected', detection)
 
         if (openaiService) {
           try {
+            sendAppLog('info', 'Gemini', `Streaming answer for: "${detection.text.slice(0, 50)}..."`)
             await openaiService.generateAnswer(detection.text)
           } catch (error) {
-            mainWindow?.webContents.send('answer-error', (error as Error).message)
+            const errMsg = (error as Error).message
+            sendAppLog('error', 'Gemini', `Answer error: ${errMsg}`)
+            mainWindow?.webContents.send('answer-error', errMsg)
           }
         }
       })
@@ -252,11 +286,16 @@ export function initializeIpcHandlers(window: BrowserWindow): void {
       await activeSttService.start()
       isCapturing = true
       console.log('Audio capture started successfully')
+      sendAppLog('success', 'System', 'Audio capture active & listening')
 
       return { success: true }
-    } catch (error) {
+    } catch (error: any) {
       console.error('start-capture error:', error)
-      const errorMessage = error instanceof Error ? error.message : 'Failed to start capture'
+      const errorMessage =
+        error?.message ||
+        error?.error?.message ||
+        (error instanceof Error ? error.message : 'Failed to start capture')
+      sendAppLog('error', 'System', `Failed to start capture: ${errorMessage}`)
       throw new Error(errorMessage)
     }
   })
@@ -330,6 +369,28 @@ export function initializeIpcHandlers(window: BrowserWindow): void {
   ipcMain.handle('close-window', () => {
     mainWindow?.close()
   })
+
+  // Window mouse pass-through handler for click-through mode
+  ipcMain.handle('set-ignore-mouse-events', (_event, ignore: boolean, forward?: boolean) => {
+    mainWindow?.setIgnoreMouseEvents(ignore, { forward: forward ?? true })
+    return true
+  })
+
+  // Renderer logging relay handler
+  ipcMain.handle(
+    'send-renderer-log',
+    (
+      _event,
+      log: {
+        level: 'info' | 'warn' | 'error' | 'success'
+        source: string
+        message: string
+      }
+    ) => {
+      sendAppLog(log.level, log.source, log.message)
+      return true
+    }
+  )
 
   // Clear conversation history
   ipcMain.handle('clear-history', () => {

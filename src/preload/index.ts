@@ -45,6 +45,14 @@ export interface AnswerEntry {
   isStreaming: boolean
 }
 
+export interface AppLogEntry {
+  id: string
+  timestamp: number
+  level: 'info' | 'warn' | 'error' | 'success'
+  source: string
+  message: string
+}
+
 // Custom APIs for renderer
 const api = {
   // Settings
@@ -71,6 +79,13 @@ const api = {
     ipcRenderer.invoke('set-window-opacity', value),
   minimizeWindow: (): Promise<void> => ipcRenderer.invoke('minimize-window'),
   closeWindow: (): Promise<void> => ipcRenderer.invoke('close-window'),
+  setIgnoreMouseEvents: (ignore: boolean, forward?: boolean): Promise<boolean> =>
+    ipcRenderer.invoke('set-ignore-mouse-events', ignore, forward),
+  sendRendererLog: (log: {
+    level: 'info' | 'warn' | 'error' | 'success'
+    source: string
+    message: string
+  }): Promise<boolean> => ipcRenderer.invoke('send-renderer-log', log),
 
   // Conversation
   clearHistory: (): Promise<{ success: boolean }> => ipcRenderer.invoke('clear-history'),
@@ -185,6 +200,29 @@ const api = {
       callback(data)
     ipcRenderer.on('screenshot-no-question', handler)
     return () => ipcRenderer.removeListener('screenshot-no-question', handler)
+  },
+
+  onAppLog: (
+    callback: (log: {
+      id: string
+      timestamp: number
+      level: 'info' | 'warn' | 'error' | 'success'
+      source: string
+      message: string
+    }) => void
+  ): (() => void) => {
+    const handler = (
+      _event: Electron.IpcRendererEvent,
+      log: {
+        id: string
+        timestamp: number
+        level: 'info' | 'warn' | 'error' | 'success'
+        source: string
+        message: string
+      }
+    ): void => callback(log)
+    ipcRenderer.on('app-log', handler)
+    return () => ipcRenderer.removeListener('app-log', handler)
   }
 }
 

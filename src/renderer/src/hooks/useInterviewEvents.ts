@@ -15,7 +15,8 @@ export function useInterviewEvents(): void {
     finalizeAnswer,
     setError,
     setCapturing,
-    setSettings
+    setSettings,
+    addLog
   } = useInterviewStore()
 
   // Use ref to ensure listeners are only set up once
@@ -98,6 +99,10 @@ export function useInterviewEvents(): void {
       setError(data.message)
     })
 
+    const unsubAppLog = window.api.onAppLog((log) => {
+      addLog(log)
+    })
+
     return () => {
       console.log('Cleaning up IPC event listeners')
       unsubTranscript()
@@ -110,6 +115,7 @@ export function useInterviewEvents(): void {
       unsubAnswerError()
       unsubQuestionDetectedFromImage()
       unsubScreenshotNoQuestion()
+      unsubAppLog()
       listenersSetUp.current = false
     }
   }, [

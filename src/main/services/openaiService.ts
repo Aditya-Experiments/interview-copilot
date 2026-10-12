@@ -223,27 +223,38 @@ export class OpenAIService extends EventEmitter {
           parts: [{ text: msg.content }]
         }))
 
+        const createStream = async (targetModel: string) => {
+          try {
+            return await ai.models.generateContentStream({
+              model: targetModel,
+              contents: contents,
+              config: {
+                systemInstruction: this.systemPrompt,
+                maxOutputTokens: this.config.maxTokens || 500,
+                temperature: this.config.temperature || 0.7,
+                thinkingConfig: {
+                  thinkingBudget: 0
+                }
+              }
+            })
+          } catch {
+            return await ai.models.generateContentStream({
+              model: targetModel,
+              contents: contents,
+              config: {
+                systemInstruction: this.systemPrompt,
+                maxOutputTokens: this.config.maxTokens || 500,
+                temperature: this.config.temperature || 0.7
+              }
+            })
+          }
+        }
+
         let stream
         try {
-          stream = await ai.models.generateContentStream({
-            model: model,
-            contents: contents,
-            config: {
-              systemInstruction: this.systemPrompt,
-              maxOutputTokens: this.config.maxTokens || 500,
-              temperature: this.config.temperature || 0.7
-            }
-          })
+          stream = await createStream(model)
         } catch {
-          stream = await ai.models.generateContentStream({
-            model: 'gemini-3.1-flash-lite',
-            contents: contents,
-            config: {
-              systemInstruction: this.systemPrompt,
-              maxOutputTokens: this.config.maxTokens || 500,
-              temperature: this.config.temperature || 0.7
-            }
-          })
+          stream = await createStream('gemini-3.1-flash-lite')
         }
 
         for await (const chunk of stream) {
