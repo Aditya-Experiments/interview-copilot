@@ -93,7 +93,12 @@ export class DeepgramService extends EventEmitter {
 
       // In Deepgram SDK v5, connect() activates the start-closed socket
       this.connection.connect()
-      await this.connection.waitForOpen()
+
+      // Timeout after 6 seconds to avoid hanging indefinitely on poor network
+      const timeoutPromise = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('Deepgram WebSocket connection timed out after 6s')), 6000)
+      )
+      await Promise.race([this.connection.waitForOpen(), timeoutPromise])
 
       // Send keep-alive ping every 8 seconds if no audio is streamed
       this.keepAliveInterval = setInterval(() => {
@@ -107,10 +112,14 @@ export class DeepgramService extends EventEmitter {
       }, 8000)
 
       this.isRunning = true
-    } catch (err) {
-      console.error('Failed to connect to Deepgram Nova-2:', err)
+    } catch (err: any) {
+      const detail =
+        err?.message ||
+        err?.error?.message ||
+        (err?.type === 'error' ? 'Failed to connect to Deepgram (verify your API key or network)' : String(err))
+      console.error('Failed to connect to Deepgram Nova-2:', detail)
       this.stop()
-      throw err
+      throw new Error(detail)
     }
   }
 

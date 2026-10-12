@@ -197,42 +197,45 @@ export function initializeIpcHandlers(window: BrowserWindow): void {
         mainWindow?.webContents.send('answer-complete', answer)
       })
 
-      // Set up STT event listeners
-      activeSttService.on('transcript', async (event) => {
-        console.log('Transcript received:', event.text)
-        questionDetector?.addTranscript(event.text, event.isFinal)
-        mainWindow?.webContents.send('transcript', event)
+      // Set up STT event listeners helper
+      const attachSttListeners = (service: DeepgramService | WhisperService) => {
+        service.on('transcript', async (event) => {
+          console.log('Transcript received:', event.text)
+          questionDetector?.addTranscript(event.text, event.isFinal)
+          mainWindow?.webContents.send('transcript', event)
 
-        // Try early detection for faster response on high-confidence questions
-        if (event.isFinal && questionDetector && openaiService) {
-          const earlyDetection = questionDetector.checkEarlyDetection(event.text)
-          if (earlyDetection) {
-            console.log('Early question detection triggered:', earlyDetection.text)
-            mainWindow?.webContents.send('question-detected', earlyDetection)
-            try {
-              await openaiService.generateAnswer(earlyDetection.text)
-            } catch (error) {
-              mainWindow?.webContents.send('answer-error', (error as Error).message)
+          // Try early detection for faster response on high-confidence questions
+          if (event.isFinal && questionDetector && openaiService) {
+            const earlyDetection = questionDetector.checkEarlyDetection(event.text)
+            if (earlyDetection) {
+              console.log('Early question detection triggered:', earlyDetection.text)
+              mainWindow?.webContents.send('question-detected', earlyDetection)
+              try {
+                await openaiService.generateAnswer(earlyDetection.text)
+              } catch (error) {
+                mainWindow?.webContents.send('answer-error', (error as Error).message)
+              }
             }
           }
-        }
-      })
+        })
 
-      activeSttService.on('utteranceEnd', () => {
-        console.log('Processing utterance...')
-        questionDetector?.onUtteranceEnd()
-        mainWindow?.webContents.send('utterance-end')
-      })
+        service.on('utteranceEnd', () => {
+          console.log('Processing utterance...')
+          questionDetector?.onUtteranceEnd()
+          mainWindow?.webContents.send('utterance-end')
+        })
 
-      activeSttService.on('speechStarted', () => {
-        mainWindow?.webContents.send('speech-started')
-      })
+        service.on('speechStarted', () => {
+          mainWindow?.webContents.send('speech-started')
+        })
 
-      activeSttService.on('error', (error) => {
-        const errorMessage = error instanceof Error ? error.message : String(error)
-        console.error('STT error:', errorMessage)
-        mainWindow?.webContents.send('capture-error', errorMessage)
-      })
+        service.on('error', (error) => {
+          const errorMessage =
+            (error as any)?.message || (error as any)?.error?.message || String(error)
+          console.error('STT error:', errorMessage)
+          mainWindow?.webContents.send('capture-error', errorMessage)
+        })
+      }
 
       // Set up question detector listener ONCE
       questionDetector?.on('questionDetected', async (detection) => {
@@ -248,15 +251,56 @@ export function initializeIpcHandlers(window: BrowserWindow): void {
         }
       })
 
-      // Start STT service
-      await activeSttService.start()
+      // Attach listeners to chosen service
+      attachSttListeners(activeSttService)
+
+      // Start STT service with automatic graceful fallback if Deepgram fails
+      try {
+        await activeSttService.start()
+      } catch (sttErr: any) {
+        const errorDetail =
+          sttErr?.message ||
+          sttErr?.error?.message ||
+          (typeof sttErr === 'string' ? sttErr : 'Connection failed')
+        console.error('Primary STT service failed to start:', errorDetail)
+
+        if (useDeepgram) {
+          console.warn('Deepgram connection failed. Gracefully falling back to Gemini/Whisper STT...')
+          // Clean up failed Deepgram service
+          deepgramService?.stop()
+          deepgramService?.removeAllListeners()
+          deepgramService = null
+
+          // Initialize fallback Whisper/Gemini service
+          whisperService = new WhisperService({
+            apiKey: settings.openaiApiKey,
+            model: 'whisper-1',
+            language: 'en'
+          })
+          activeSttService = whisperService
+          attachSttListeners(activeSttService)
+          await activeSttService.start()
+
+          // Inform user in UI
+          mainWindow?.webContents.send(
+            'capture-error',
+            `Deepgram: ${errorDetail}. Falling back to Gemini audio.`
+          )
+        } else {
+          throw new Error(errorDetail)
+        }
+      }
+
       isCapturing = true
       console.log('Audio capture started successfully')
 
       return { success: true }
-    } catch (error) {
+    } catch (error: any) {
       console.error('start-capture error:', error)
-      const errorMessage = error instanceof Error ? error.message : 'Failed to start capture'
+      const errorMessage =
+        error?.message ||
+        error?.error?.message ||
+        (error instanceof Error ? error.message : 'Failed to start audio capture')
       throw new Error(errorMessage)
     }
   })
