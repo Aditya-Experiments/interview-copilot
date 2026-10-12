@@ -81,6 +81,9 @@ const IGNORE_PATTERNS = [
   /^(we'll|we will|let me|let's|I'll|I will).*$/i
 ]
 
+// Words that indicate the speaker paused mid-thought (should NOT trigger early)
+const INCOMPLETE_TRAILING_WORDS = /\b(and|or|but|because|with|for|to|of|in|like|that|which|if|when|so|while|where|as|than|versus|vs|such as)\s*[.,!?]*$/i
+
 export class QuestionDetector extends EventEmitter {
   private transcriptBuffer: string[] = []
   private minQuestionLength = 15 // Minimum characters for a valid question
@@ -113,6 +116,11 @@ export class QuestionDetector extends EventEmitter {
 
     // Check if text should be ignored
     if (this.shouldIgnore(trimmedText)) {
+      return null
+    }
+
+    // Prevent premature trigger if the speaker paused mid-thought on a conjunction or preposition
+    if (INCOMPLETE_TRAILING_WORDS.test(trimmedText)) {
       return null
     }
 
