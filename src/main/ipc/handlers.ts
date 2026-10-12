@@ -1,4 +1,4 @@
-import { app, BrowserWindow, clipboard, desktopCapturer, ipcMain } from 'electron'
+import { BrowserWindow, clipboard, desktopCapturer, ipcMain } from 'electron'
 import { AnswerEntry } from '../../preload/index'
 import { HistoryManager } from '../services/historyManager'
 import { OpenAIService } from '../services/openaiService'
@@ -18,32 +18,11 @@ let visionService: VisionService | null = null
 let mainWindow: BrowserWindow | null = null
 let isCapturing = false
 
-// Helper: apply always-on-top with macOS fullscreen overlay support
-function applyAlwaysOnTop(win: BrowserWindow, enabled: boolean): void {
-  if (process.platform === 'darwin') {
-    win.setVisibleOnAllWorkspaces(enabled, { visibleOnFullScreen: enabled })
-    win.setAlwaysOnTop(enabled, enabled ? 'screen-saver' : 'normal')
-  } else {
-    win.setAlwaysOnTop(enabled, enabled ? 'screen-saver' : 'normal')
-  }
-}
-
 export function initializeIpcHandlers(window: BrowserWindow): void {
   mainWindow = window
   settingsManager = new SettingsManager()
   historyManager = new HistoryManager()
   questionDetector = new QuestionDetector()
-
-  // Maintain fullscreen overlay and screen-saver level when focus changes to another app (e.g. Chrome)
-  mainWindow.on('blur', () => {
-    if (process.platform === 'darwin' && mainWindow && !mainWindow.isDestroyed()) {
-      const isPinned = settingsManager?.getSetting('alwaysOnTop') ?? true
-      if (isPinned) {
-        mainWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
-        mainWindow.setAlwaysOnTop(true, 'screen-saver')
-      }
-    }
-  })
 
   // Settings handlers
   ipcMain.handle('get-settings', () => {
@@ -67,7 +46,7 @@ export function initializeIpcHandlers(window: BrowserWindow): void {
 
     // Apply window settings immediately
     if (updates.alwaysOnTop !== undefined && mainWindow) {
-      applyAlwaysOnTop(mainWindow, updates.alwaysOnTop)
+      mainWindow.setAlwaysOnTop(updates.alwaysOnTop)
     }
     if (updates.windowOpacity !== undefined && mainWindow) {
       mainWindow.setOpacity(updates.windowOpacity)
@@ -313,9 +292,7 @@ export function initializeIpcHandlers(window: BrowserWindow): void {
 
   // Window control handlers
   ipcMain.handle('set-always-on-top', (_event, value: boolean) => {
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      applyAlwaysOnTop(mainWindow, value)
-    }
+    mainWindow?.setAlwaysOnTop(value)
     settingsManager?.setSetting('alwaysOnTop', value)
     return value
   })
@@ -331,10 +308,7 @@ export function initializeIpcHandlers(window: BrowserWindow): void {
   })
 
   ipcMain.handle('close-window', () => {
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.destroy()
-    }
-    app.quit()
+    mainWindow?.close()
   })
 
   // Clear conversation history

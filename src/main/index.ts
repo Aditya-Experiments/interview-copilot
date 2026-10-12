@@ -6,9 +6,6 @@ import { cleanupIpcHandlers, initializeIpcHandlers } from './ipc/handlers'
 
 let mainWindow: BrowserWindow | null = null
 
-// Prevent macOS from throttling background timers (needed for audio capture behind fullscreen apps)
-app.commandLine.appendSwitch('disable-background-timer-throttling')
-
 function createWindow(): void {
   const appIcon = nativeImage.createFromPath(icon)
 
@@ -28,8 +25,6 @@ function createWindow(): void {
     frame: false, // Frameless for custom title bar
     transparent: false,
     alwaysOnTop: true, // Stay on top by default
-    fullscreenable: false, // Don't let this window enter its own fullscreen Space
-    closable: true,
     skipTaskbar: false,
     resizable: true,
     icon: appIcon,
@@ -37,28 +32,17 @@ function createWindow(): void {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: false,
       contextIsolation: true,
-      nodeIntegration: false,
-      backgroundThrottling: false // Keep renderer active behind fullscreen apps
+      nodeIntegration: false
     }
   })
 
-  // Apply fullscreen overlay support immediately on creation on macOS
-  if (process.platform === 'darwin') {
-    mainWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
-    mainWindow.setAlwaysOnTop(true, 'screen-saver')
-  }
+  // Enable screen share protection - hides window from screen capture
+  mainWindow.setContentProtection(true)
 
   mainWindow.on('ready-to-show', () => {
     if (process.platform === 'win32' && !appIcon.isEmpty()) {
       mainWindow?.setIcon(appIcon)
     }
-    // Re-assert fullscreen overlay support on macOS
-    if (mainWindow && process.platform === 'darwin') {
-      mainWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
-      mainWindow.setAlwaysOnTop(true, 'screen-saver')
-    }
-    // Enable screen share protection AFTER overlay setup to avoid conflicts
-    mainWindow?.setContentProtection(true)
     mainWindow?.show()
     mainWindow?.focus()
   })
@@ -106,10 +90,12 @@ app.whenReady().then(() => {
   })
 })
 
-// Quit when all windows are closed
+// Quit when all windows are closed, except on macOS
 app.on('window-all-closed', () => {
   cleanupIpcHandlers()
-  app.quit()
+  if (process.platform !== 'darwin') {
+    app.quit()
+  }
 })
 
 // Cleanup on quit
