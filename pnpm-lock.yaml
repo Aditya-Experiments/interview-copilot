@@ -8,6 +8,9 @@ importers:
 
   .:
     dependencies:
+      '@deepgram/sdk':
+        specifier: ^5.15.0
+        version: 5.15.0
       '@electron-toolkit/preload':
         specifier: ^3.0.2
         version: 3.0.2(electron@39.8.10)
@@ -204,6 +207,10 @@ packages:
   '@babel/types@7.29.8':
     resolution: {integrity: sha512-Vj1jF3cPfxg7OAfoI7QnVKLoILlm2JF9pnVHrX8qx7AHMiYWT+NDAA7jChlNgRS4WTLc/fD1lXLmPixluj+3Gg==}
     engines: {node: '>=6.9.0'}
+
+  '@deepgram/sdk@5.15.0':
+    resolution: {integrity: sha512-LAmMdOHVfvyJ8hz+YI4aK+kPmfqdtmMl7O8Q63lDWVyuHx9vEyoyt+W9y3vxxaVxdOmn4zFmGYjntbNVh/KyqA==}
+    engines: {node: '>=18.0.0'}
 
   '@electron-toolkit/eslint-config-prettier@3.0.0':
     resolution: {integrity: sha512-YapmIOVkbYdHLuTa+ad1SAVtcqYL9A/SJsc7cxQokmhcwAwonGevNom37jBf9slXegcZ/Slh01I/JARG1yhNFw==}
@@ -3525,6 +3532,13 @@ snapshots:
     dependencies:
       '@babel/helper-string-parser': 7.29.7
       '@babel/helper-validator-identifier': 7.29.7
+
+  '@deepgram/sdk@5.15.0':
+    dependencies:
+      ws: 8.22.0
+    transitivePeerDependencies:
+      - bufferutil
+      - utf-8-validate
 
   '@electron-toolkit/eslint-config-prettier@3.0.0(eslint@9.39.5(jiti@1.21.7))(prettier@3.9.6)':
     dependencies:
