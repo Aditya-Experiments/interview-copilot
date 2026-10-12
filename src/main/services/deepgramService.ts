@@ -44,7 +44,9 @@ export class DeepgramService extends EventEmitter {
         smart_format: 'true' as any,
         interim_results: 'true' as any,
         endpointing: 300 as any,
-        utterance_end_ms: 1000 as any
+        utterance_end_ms: 1000 as any,
+        vad_events: 'true' as any,
+        reconnectAttempts: 3
       } as any)
 
       this.connection.on('open', () => {
@@ -89,11 +91,15 @@ export class DeepgramService extends EventEmitter {
         console.log('Deepgram WebSocket closed')
       })
 
+      // In Deepgram SDK v5, connect() activates the start-closed socket
+      this.connection.connect()
+      await this.connection.waitForOpen()
+
       // Send keep-alive ping every 8 seconds if no audio is streamed
       this.keepAliveInterval = setInterval(() => {
-        if (this.connection && this.isRunning) {
+        if (this.connection && this.isRunning && this.connection.socket?.readyState === 1) {
           try {
-            this.connection.sendKeepAlive()
+            this.connection.sendKeepAlive({ type: 'KeepAlive' } as any)
           } catch {
             // Ignore keepalive error
           }
@@ -103,6 +109,7 @@ export class DeepgramService extends EventEmitter {
       this.isRunning = true
     } catch (err) {
       console.error('Failed to connect to Deepgram Nova-2:', err)
+      this.stop()
       throw err
     }
   }
@@ -117,7 +124,9 @@ export class DeepgramService extends EventEmitter {
 
     if (this.connection) {
       try {
-        this.connection.sendCloseStream()
+        if (this.connection.socket?.readyState === 1) {
+          this.connection.sendCloseStream({ type: 'CloseStream' } as any)
+        }
         this.connection.close()
       } catch {
         // Ignore close error
@@ -130,6 +139,8 @@ export class DeepgramService extends EventEmitter {
 
   addAudioData(audioData: Buffer | ArrayBuffer): void {
     if (!this.isRunning || !this.connection) return
+    // Only send if socket is in OPEN state (1)
+    if (this.connection.socket && this.connection.socket.readyState !== 1) return
 
     try {
       const buffer = audioData instanceof ArrayBuffer ? Buffer.from(audioData) : audioData
