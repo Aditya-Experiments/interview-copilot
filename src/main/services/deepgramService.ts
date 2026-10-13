@@ -44,8 +44,10 @@ export class DeepgramService extends EventEmitter {
         channels: 1 as any,
         smart_format: 'true' as any,
         interim_results: 'true' as any,
-        endpointing: 650 as any,
-        utterance_end_ms: 1200 as any,
+        // Deepgram recommends endpointing=100 for language=multi (code-switching)
+        // Tighter pause detection catches Hindi↔English switches accurately
+        endpointing: 100 as any,
+        utterance_end_ms: 1000 as any,
         vad_events: 'true' as any,
         reconnectAttempts: 3
       } as any)
