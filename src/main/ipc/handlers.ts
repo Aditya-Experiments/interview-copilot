@@ -291,8 +291,8 @@ export function initializeIpcHandlers(window: BrowserWindow): void {
         groqApiKey: settings.groqApiKey,
         geminiApiKey: settings.geminiApiKey,
         model: settings.openaiModel,
-        groqModel: settings.groqModel || 'llama-3.1-8b-instant',
-        geminiModel: settings.geminiModel || 'gemini-2.5-flash',
+        groqModel: settings.groqModel || 'llama-3.3-70b-versatile',
+        geminiModel: settings.geminiModel || 'gemini-3.5-flash-lite',
         resumeDescription: settings.resumeDescription,
         llmProvider: settings.llmProvider || 'groq'
       })

@@ -220,7 +220,7 @@ export class OpenAIService extends EventEmitter {
       groqAttempts.push({
         provider: 'groq',
         key,
-        model: this.config.groqModel || 'llama-3.1-8b-instant',
+        model: this.config.groqModel || 'llama-3.3-70b-versatile',
         index: idx + 1
       })
     })
@@ -241,7 +241,7 @@ export class OpenAIService extends EventEmitter {
       geminiKeys.push(this.config.apiKey.trim())
     }
     geminiKeys.forEach((key, idx) => {
-      let gModel = this.config.geminiModel || 'gemini-2.5-flash'
+      let gModel = this.config.geminiModel || 'gemini-3.5-flash-lite'
       if (gModel.includes('llama') || gModel.includes('gpt')) {
         gModel = 'gemini-3.5-flash-lite'
       }
@@ -322,35 +322,49 @@ export class OpenAIService extends EventEmitter {
             ...this.conversationHistory
           ]
 
-          let stream
-          try {
-            stream = await client.chat.completions.create({
-              model: attempt.model,
-              messages: messages,
-              max_completion_tokens: this.config.maxTokens || 500,
-              temperature: this.config.temperature || 0.7,
-              stream: true
-            })
-          } catch (groqModelErr: any) {
-            if (attempt.model !== 'llama-3.1-8b-instant') {
-              console.warn(`Groq model ${attempt.model} failed, immediately retrying with llama-3.1-8b-instant:`, groqModelErr?.message)
+          // Candidate models: attempt's selected model first, followed by known available models
+          const candidateModels = [
+            attempt.model,
+            'llama-3.3-70b-versatile',
+            'llama-3.1-8b-instant'
+          ].filter((m, idx, arr) => Boolean(m) && arr.indexOf(m) === idx)
+
+          let stream: any = null
+          let lastGroqErr: any = null
+
+          for (const candModel of candidateModels) {
+            try {
               stream = await client.chat.completions.create({
-                model: 'llama-3.1-8b-instant',
+                model: candModel,
                 messages: messages,
                 max_completion_tokens: this.config.maxTokens || 500,
                 temperature: this.config.temperature || 0.7,
                 stream: true
               })
-            } else {
-              throw groqModelErr
+              break
+            } catch (candErr: any) {
+              lastGroqErr = candErr
+              console.warn(`Groq model "${candModel}" error (${candErr?.message || 'unknown'}). Retrying next candidate...`)
             }
           }
 
-          for await (const chunk of stream) {
-            const content = chunk.choices[0]?.delta?.content || ''
-            if (content) {
-              fullResponse += content
-              this.emit('stream', content)
+          if (!stream) {
+            throw lastGroqErr
+          }
+
+          try {
+            for await (const chunk of stream) {
+              const content = chunk.choices[0]?.delta?.content || ''
+              if (content) {
+                fullResponse += content
+                this.emit('stream', content)
+              }
+            }
+          } catch (streamErr: any) {
+            if (fullResponse.trim().length > 50 && (streamErr?.message?.includes('EOF') || streamErr?.message?.includes('stream'))) {
+              console.warn(`Groq stream ended with unexpected EOF, but preserved response (${fullResponse.length} chars)`)
+            } else {
+              throw streamErr
             }
           }
         } else if (attempt.provider === 'openai') {
@@ -371,11 +385,19 @@ export class OpenAIService extends EventEmitter {
             stream: true
           })
 
-          for await (const chunk of stream) {
-            const content = chunk.choices[0]?.delta?.content || ''
-            if (content) {
-              fullResponse += content
-              this.emit('stream', content)
+          try {
+            for await (const chunk of stream) {
+              const content = chunk.choices[0]?.delta?.content || ''
+              if (content) {
+                fullResponse += content
+                this.emit('stream', content)
+              }
+            }
+          } catch (streamErr: any) {
+            if (fullResponse.trim().length > 50 && (streamErr?.message?.includes('EOF') || streamErr?.message?.includes('stream'))) {
+              console.warn(`OpenAI stream ended with unexpected EOF, but preserved response (${fullResponse.length} chars)`)
+            } else {
+              throw streamErr
             }
           }
         } else {
@@ -420,11 +442,19 @@ export class OpenAIService extends EventEmitter {
             stream = await createStream('gemini-3.5-flash-lite')
           }
 
-          for await (const chunk of stream) {
-            const content = chunk.text || ''
-            if (content) {
-              fullResponse += content
-              this.emit('stream', content)
+          try {
+            for await (const chunk of stream) {
+              const content = chunk.text || ''
+              if (content) {
+                fullResponse += content
+                this.emit('stream', content)
+              }
+            }
+          } catch (streamErr: any) {
+            if (fullResponse.trim().length > 50 && (streamErr?.message?.includes('EOF') || streamErr?.message?.includes('stream'))) {
+              console.warn(`Gemini stream ended with unexpected EOF, but preserved response (${fullResponse.length} chars)`)
+            } else {
+              throw streamErr
             }
           }
         }
@@ -516,11 +546,19 @@ First, identify what the question is asking, then provide:
             stream: true
           })
 
-          for await (const chunk of stream) {
-            const content = chunk.choices[0]?.delta?.content || ''
-            if (content) {
-              fullResponse += content
-              this.emit('stream', content)
+          try {
+            for await (const chunk of stream) {
+              const content = chunk.choices[0]?.delta?.content || ''
+              if (content) {
+                fullResponse += content
+                this.emit('stream', content)
+              }
+            }
+          } catch (streamErr: any) {
+            if (fullResponse.trim().length > 50 && (streamErr?.message?.includes('EOF') || streamErr?.message?.includes('stream'))) {
+              console.warn(`Groq image stream ended with unexpected EOF, preserved response (${fullResponse.length} chars)`)
+            } else {
+              throw streamErr
             }
           }
         } else if (attempt.provider === 'openai') {
@@ -547,11 +585,19 @@ First, identify what the question is asking, then provide:
             stream: true
           })
 
-          for await (const chunk of stream) {
-            const content = chunk.choices[0]?.delta?.content || ''
-            if (content) {
-              fullResponse += content
-              this.emit('stream', content)
+          try {
+            for await (const chunk of stream) {
+              const content = chunk.choices[0]?.delta?.content || ''
+              if (content) {
+                fullResponse += content
+                this.emit('stream', content)
+              }
+            }
+          } catch (streamErr: any) {
+            if (fullResponse.trim().length > 50 && (streamErr?.message?.includes('EOF') || streamErr?.message?.includes('stream'))) {
+              console.warn(`OpenAI image stream ended with unexpected EOF, preserved response (${fullResponse.length} chars)`)
+            } else {
+              throw streamErr
             }
           }
         } else {
@@ -592,11 +638,19 @@ First, identify what the question is asking, then provide:
             })
           }
 
-          for await (const chunk of stream) {
-            const content = chunk.text || ''
-            if (content) {
-              fullResponse += content
-              this.emit('stream', content)
+          try {
+            for await (const chunk of stream) {
+              const content = chunk.text || ''
+              if (content) {
+                fullResponse += content
+                this.emit('stream', content)
+              }
+            }
+          } catch (streamErr: any) {
+            if (fullResponse.trim().length > 50 && (streamErr?.message?.includes('EOF') || streamErr?.message?.includes('stream'))) {
+              console.warn(`Gemini image stream ended with unexpected EOF, preserved response (${fullResponse.length} chars)`)
+            } else {
+              throw streamErr
             }
           }
         }

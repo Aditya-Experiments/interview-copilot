@@ -22,14 +22,15 @@ interface ModelOption {
 }
 
 const GROQ_MODELS: ModelOption[] = [
-  { id: 'llama-3.1-8b-instant', name: 'Llama 3.1 8B Instant (Ultra-Fast ~100ms - Recommended)' },
-  { id: 'llama-3.3-70b-versatile', name: 'Llama 3.3 70B Versatile (Large Model - Groq LPU)' }
+  { id: 'llama-3.3-70b-versatile', name: 'Llama 3.3 70B Versatile (Groq Flagship - Recommended)' },
+  { id: 'llama-3.1-8b-instant', name: 'Llama 3.1 8B Instant (Ultra-Fast 8B)' }
 ]
 
 const GEMINI_MODELS: ModelOption[] = [
-  { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash (Recommended - Fast & Free)' },
-  { id: 'gemini-2.5-flash-lite', name: 'Gemini 2.5 Flash Lite (Ultra-Low Latency)' },
-  { id: 'gemini-1.5-flash', name: 'Gemini 1.5 Flash (Free Tier)' }
+  { id: 'gemini-3.5-flash-lite', name: 'Gemini 3.5 Flash Lite (500 RPD, 15 RPM - High Quota & Fast)' },
+  { id: 'gemini-3.1-flash-lite', name: 'Gemini 3.1 Flash Lite (500 RPD, 15 RPM - Ultra Fast)' },
+  { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash (20 RPD - Low Free Limit)' },
+  { id: 'gemini-2.5-flash-lite', name: 'Gemini 2.5 Flash Lite (20 RPD - Low Free Limit)' }
 ]
 
 const OPENAI_MODELS: ModelOption[] = [
@@ -244,8 +245,8 @@ export function SettingsModal(): React.JSX.Element | null {
         groqApiKey: primaryGroq,
         geminiApiKey: primaryGemini,
         openaiApiKey: fallbackApiKey,
-        groqModel: localSettings.groqModel || 'llama-3.1-8b-instant',
-        geminiModel: localSettings.geminiModel || 'gemini-2.5-flash',
+        groqModel: localSettings.groqModel || 'llama-3.3-70b-versatile',
+        geminiModel: localSettings.geminiModel || 'gemini-3.5-flash-lite',
         openaiModel: localSettings.openaiModel || 'gpt-4o-mini'
       }
 
@@ -388,7 +389,7 @@ export function SettingsModal(): React.JSX.Element | null {
             keys={groqKeys}
             onChange={(keys) => setLocalSettings({ ...localSettings, groqApiKeys: keys })}
             placeholder="gsk_..."
-            modelId={localSettings.groqModel || 'llama-3.1-8b-instant'}
+            modelId={localSettings.groqModel || 'llama-3.3-70b-versatile'}
             onModelChange={(model) => setLocalSettings({ ...localSettings, groqModel: model })}
             modelOptions={GROQ_MODELS}
             modelLabel="Groq Model"
@@ -409,7 +410,7 @@ export function SettingsModal(): React.JSX.Element | null {
             keys={geminiKeys}
             onChange={(keys) => setLocalSettings({ ...localSettings, geminiApiKeys: keys })}
             placeholder="AIza... or AQ..."
-            modelId={localSettings.geminiModel || 'gemini-2.5-flash'}
+            modelId={localSettings.geminiModel || 'gemini-3.5-flash-lite'}
             onModelChange={(model) => setLocalSettings({ ...localSettings, geminiModel: model })}
             modelOptions={GEMINI_MODELS}
             modelLabel="Gemini Model"
