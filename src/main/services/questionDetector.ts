@@ -10,142 +10,18 @@ export interface DetectedQuestion {
   boundContext?: string
 }
 
-// Question starters that appear at clause or sentence boundaries
-const CLAUSE_QUESTION_STARTERS = [
-  /\b(what|when|where|who|whom|whose|which|why|how)\b/i,
-  /\b(can|could|would|will|shall|should|may|might|must)\s+you\b/i,
-  /\b(do|does|did)\s+(you|we|they)\b/i,
-  /\b(have|has)\s+(you|we|they)\b/i,
-  /\b(is|are|was|were)\s+(there|this|that|it|your)\b/i,
-  // Hindi & Hinglish question starters
-  /(^|\s)(क्या|कैसे|क्यों|कहाँ|कहा|कब|कौन|किसका|किसकी|किसके|कितना|कितनी|कितने|किधर)(\s|$)/i,
-  /\b(kya|kaise|kyu|kyun|kahan|kaha|kab|kaun|kiska|kiski|kiske|kitna|kitni|kitne|kidhar)\b/i
-]
-
-// Imperative question verbs common in interviews
-const CLAUSE_IMPERATIVE_STARTERS = [
-  /\b(tell me|describe|explain|walk me through|give me|share with me|elaborate on|clarify|detail)\b/i,
-  // Hindi & Hinglish imperatives
-  /(^|\s)(बताइए|बताओ|समझाइए|समझाओ|वर्णन कीजिए|बोलिए|बोलो)(\s|$)/i,
-  /\b(bataiye|batao|samjhaiye|samjhao|explain karo|batao zara|boliye|bolo)\b/i
-]
-
-// Question ending patterns
-const QUESTION_ENDINGS = [
-  /\?$/,
-  /\b(right|correct)\s*\??\s*$/i,
-  /(^|\s)(है ना|सही है|है क्या)\s*\??\s*$/i,
-  /\b(hai na|sahi hai|hai kya)\s*\??\s*$/i
-]
-
-// Common interview question patterns
-const INTERVIEW_PATTERNS = [
-  /tell me about (a time|your|the|yourself)/i,
-  /why (do|did|should|would|are) you/i,
-  /what (is|are|was|were) your/i,
-  /what (is|are) the/i,
-  /how (do|did|would|could|have) you/i,
-  /describe (a time|a situation|a scenario|your|how)/i,
-  /give (me )?(an )?example/i,
-  /what (would|do|did) you (do|say|think|learn)/i,
-  /where do you see yourself/i,
-  /what (is|are) your (greatest )?(strength|weakness)/i,
-  /why (are you|do you want|did you)/i,
-  /what motivates you/i,
-  /how do you handle/i,
-  /tell me about a challenge/i,
-  /can you (describe|explain|tell|give|walk)/i,
-  /what (challenges|problems|issues)/i,
-  /how (would|do) you (approach|solve|handle|deal)/i,
-  /what (makes|made) you/i,
-  /why (should|would) we/i,
-  /what do you know about/i,
-  /what are your (career|salary|long.term|short.term)/i,
-  /do you have (any )?questions/i,
-  /what (tools|technologies|languages|frameworks)/i,
-  /have you (ever|worked|used|experienced)/i,
-
-  // Technical interview patterns
-  /what happens when/i,
-  /explain .+ in .+ words/i,
-  /what is (the|a|an) .+ (in|for|with)/i,
-  /when (would|should) you use/i,
-  /pros and cons of/i,
-  /advantages (of|and)/i,
-  /trade.?offs (of|between)/i,
-  /compare .+ (with|and|to|vs)/i,
-  /what are (some|the) (best practices|common mistakes)/i,
-  /how (can|do) you (optimize|improve|debug|test)/i,
-  /what (design pattern|architecture|approach)/i,
-  /walk me through (your|the|a)/i,
-  /what is your (approach|process|methodology)/i,
-
-  // System design patterns
-  /how would you (design|build|architect|scale)/i,
-  /what (database|cache|queue|service) would you/i,
-
-  // Behavioral patterns
-  /give me an example (of|when)/i,
-  /how did you (handle|manage|resolve|approach)/i,
-  /what was (the outcome|the result|your role)/i,
-  /what did you learn from/i,
-
-  // Hindi & Hinglish interview patterns
-  /(अपने बारे में|तुम्हारा परिचय|आपका परिचय|इंट्रोडक्शन|इंट्रो)/i,
-  /\b(apne baare mein|apna introduction|tell me about yourself)\b/i,
-  /(आपका अनुभव|तुम्हारा अनुभव|प्रोजेक्ट के बारे में|काम किया)/i,
-  /\b(aapka experience|project ke baare mein|kaam kiya)\b/i,
-  /(ताकत|कमजोरी|चुनौती|समस्या)/i
-]
-
-// Common topics probed during interviews
-const INTERVIEW_TOPICS = [
-  /\b(edge|strength|weakness|background|experience|education|degree|college|university)\b/i,
-  /\b(project|projects|architecture|stack|tech stack|frontend|backend|database|framework|api|apis)\b/i,
-  /\b(role|company|team|leadership|challenge|conflict|failure|achievement)\b/i,
-  /\b(scale|scaling|performance|optimization|algorithm|dsa|system design)\b/i,
-  /\b(resume|cv|career|internship|job|hire|join)\b/i
-]
-
-// Common short phrases to IGNORE (only standalone pleasantries & feedback)
-const IGNORE_PATTERNS = [
-  /^(yes|no|yeah|yep|nope|okay|ok|sure|right|correct|exactly|absolutely|definitely|great|good|fine|thanks|thank you|bye|hello|hi|hey)[\s.,!?]*$/i,
-  /^(great effort on that response|nicely articulated|well done|good job|sounds great)[\s.,!?]*$/i,
-  /^(mm+|uh+|um+|ah+|oh+|hmm+)[\s.,!?]*$/i,
-  /^(I see|I understand|got it|makes sense|sounds good|no problem)[\s.,!?]*$/i,
-  /^(see you|have a nice day|take care|nice to meet you|pleasure meeting you)[\s.,!?]*$/i,
-  /^(let me see|let me think|let's see)[\s.,!?]*$/i,
-  // Hindi & Hinglish pleasantries / acknowledgments to ignore
-  /^(हाँ|हां|नहीं|अच्छा|ठीक है|नमस्ते|धन्यवाद|शुक्रिया|जी|हाँजी)[\s.,!?]*$/i,
-  /^(haan|nahi|theek hai|achha|namaste|dhanyawad|shukriya|ji|haanji)[\s.,!?]*$/i
-]
-
-// Anaphora patterns (referential pronouns and demonstratives that require premise context)
-const ANAPHORA_PATTERNS = [
-  /\b(this|that|it|these|those)\b/i,
-  /\b(solve this|check this|do this|handle this|approach this|fix this|deal with this)\b/i,
-  /\b(how did you (solve|build|do|handle|fix|scale|approach) (it|this|that))\b/i,
-  /\b(walk me through (this|that|how you would do this|how you would check this))\b/i,
-  /\b(explain (this|that|it))\b/i,
-  /\b(why did you (choose|pick|use) (this|that))\b/i,
-  /\b(what was (the reason|the bottleneck|the challenge) (there|for that))\b/i
-]
-
-interface RecentChunk {
-  text: string
-  timestamp: number
-}
-
+/**
+ * QuestionDetector (Parakeet AI Turn Manager)
+ * 
+ * Replaces hardcoded regex scoring with a robust turn-based accumulator.
+ * As the interviewer speaks, finalized clauses are gathered in strict chronological order.
+ * When the speaker pauses (End-of-Utterance), the complete accumulated turn is emitted
+ * directly to the LLM for semantic intent analysis and Glance Mode generation.
+ */
 export class QuestionDetector extends EventEmitter {
-  private transcriptBuffer: string[] = []
-  private recentChunks: RecentChunk[] = []
-  private interviewerTurnChunks: RecentChunk[] = []
+  private turnChunks: string[] = []
   private turnStartTime: number = Date.now()
   private isCandidateSpeaking: boolean = false
-  private minQuestionLength = 8 // Allow concise Hindi/English questions
-  private minWordCount = 2 // Minimum 2 words (e.g. "क्या किया?", "tell me")
-  private confidenceThreshold = 0.55 // Threshold for utteranceEnd detection
-  private earlyDetectionThreshold = 0.75 // Threshold for instantaneous early detection
   private lastEmittedQuestion: string = ''
   private lastEmittedTime: number = 0
 
@@ -154,252 +30,102 @@ export class QuestionDetector extends EventEmitter {
   }
 
   /**
-   * Called by Dual-Channel audio engine when candidate speaks into mic.
-   * Suppresses false triggers and resets interviewer turn upon completion.
+   * Called when candidate speaks into mic (Dual-Channel speaker separation).
    */
   setCandidateSpeaking(speaking: boolean): void {
     this.isCandidateSpeaking = speaking
   }
 
+  getCandidateSpeaking(): boolean {
+    return this.isCandidateSpeaking
+  }
+
   /**
-   * Resets the turn boundary (T=0) when the candidate finishes speaking.
-   * Breathing pauses by the interviewer DO NOT call this.
+   * Resets the turn boundary when the candidate finishes answering.
+   * If the interviewer spoke recently (within last 12s), preserves speech.
    */
   turnBoundaryReset(): void {
-    console.log('[QuestionDetector] ──> Turn boundary reset: T=0 (Candidate finished speaking)')
-    this.turnStartTime = Date.now()
-    this.interviewerTurnChunks = []
-    this.transcriptBuffer = []
-  }
-
-  addTranscript(text: string, isFinal: boolean): void {
-    // If candidate is actively speaking, ignore to prevent confusing candidate voice with interviewer questions
-    if (this.isCandidateSpeaking) {
+    const now = Date.now()
+    // Safety guard: do not wipe if interviewer was just speaking in the last 12 seconds
+    if (this.turnChunks.length > 0 && now - this.turnStartTime < 12000 && this.lastEmittedTime === 0) {
+      console.log('[QuestionDetector] 🛡️ Preserving recent interviewer speech despite turn reset request')
       return
     }
 
-    if (isFinal && text.trim()) {
-      const trimmed = text.trim()
-      const now = Date.now()
-      this.transcriptBuffer.push(trimmed)
-      this.recentChunks.push({ text: trimmed, timestamp: now })
-      this.interviewerTurnChunks.push({ text: trimmed, timestamp: now })
+    console.log('[QuestionDetector] ──> Turn boundary reset: T=0')
+    this.turnChunks = []
+    this.turnStartTime = now
+  }
 
-      // Keep recent chunks within the last 60 seconds (up to 25 chunks)
-      const cutoff = now - 60000
-      this.recentChunks = this.recentChunks.filter((c) => c.timestamp >= cutoff).slice(-25)
+  /**
+   * Clears accumulated turn buffers.
+   */
+  clearBuffer(): void {
+    this.turnChunks = []
+    this.turnStartTime = Date.now()
+  }
 
-      // Turn window keeps accumulating across pauses (up to 90 seconds for deep scenarios)
-      const turnCutoff = now - 90000
-      this.interviewerTurnChunks = this.interviewerTurnChunks
-        .filter((c) => c.timestamp >= turnCutoff)
-        .slice(-30)
+  /**
+   * Called on every STT transcript event.
+   * Finalized clauses are appended chronologically to the current turn buffer.
+   */
+  addTranscript(text: string, isFinal: boolean): void {
+    if (!isFinal || !text.trim()) return
+
+    const trimmed = text.trim()
+    // Deduplicate identical consecutive chunks
+    if (this.turnChunks.length === 0 || this.turnChunks[this.turnChunks.length - 1] !== trimmed) {
+      this.turnChunks.push(trimmed)
     }
   }
 
   /**
-   * Binds anaphoric references ("this", "that", "it") to antecedent entities
-   * mentioned earlier in the turn or in the immediate previous discussion.
+   * Called on End-of-Utterance (EoU): when the interviewer finishes speaking or pauses.
+   * Reconstructs the complete question across breathing pauses and emits for LLM generation.
    */
-  private resolveAnaphora(triggerText: string, fullTurnText: string): { boundText: string; boundContext?: string } {
-    const hasAnaphora = ANAPHORA_PATTERNS.some((p) => p.test(triggerText))
-
-    // 1. If full turn text already has premise before the question prompt, dispatch the full scenario
-    if (fullTurnText && fullTurnText !== triggerText && fullTurnText.length > triggerText.length + 10) {
-      return {
-        boundText: fullTurnText,
-        boundContext: `Cumulative scenario premise: "${fullTurnText.slice(0, 150)}..."`
-      }
-    }
-
-    // 2. If question is a short anaphoric follow-up (e.g., "How did you solve it?")
-    // and current turn lacks a premise, bind to the previous topic in history
-    if (hasAnaphora && this.lastEmittedQuestion) {
-      const antecedent = this.lastEmittedQuestion.slice(0, 140)
-      const bound = `Regarding our discussion on "${antecedent}": ${triggerText}`
-      return {
-        boundText: bound,
-        boundContext: `Bound antecedent: "${antecedent}"`
-      }
-    }
-
-    return { boundText: fullTurnText || triggerText }
-  }
-
-  /**
-   * Reconstructs the complete question by joining all chunks spoken since the turn began.
-   * Turn Persistence: Breathing pauses do not reset the turn context.
-   */
-  private getFullQuestionText(triggerText: string): string {
-    const chunks: string[] = []
-
-    // 1. Gather all chunks from current interviewer turn (since turnStartTime and lastEmittedTime)
-    for (const c of this.interviewerTurnChunks) {
-      if (c.timestamp >= this.turnStartTime && c.timestamp > this.lastEmittedTime) {
-        if (chunks.length === 0 || chunks[chunks.length - 1] !== c.text) {
-          chunks.push(c.text)
-        }
-      }
-    }
-
-    // 2. Include any pending buffer texts
-    for (const bufText of this.transcriptBuffer) {
-      if (!chunks.includes(bufText)) {
-        chunks.push(bufText)
-      }
-    }
-
-    let fullText = chunks.join(' ').trim()
-    if (!fullText) {
-      fullText = triggerText
-    } else if (!fullText.includes(triggerText)) {
-      fullText = `${fullText} ${triggerText}`.trim()
-    }
-
-    return fullText
-  }
-
-  /**
-   * Classify the question category for Glance Mode formatting
-   */
-  public categorizeQuestion(text: string): InterviewQuestionCategory {
-    // 1. Coding / LeetCode
-    if (
-      /\b(write (a|the) (function|code|algorithm|script|query)|implement (a|the)|solve this problem|leetcode|two sum|reverse a linked list|binary search|dsa|time complexity of your code|space complexity of your code|big o)\b/i.test(
-        text
-      )
-    ) {
-      return 'coding'
-    }
-
-    // 2. Behavioral / HR (STAR format)
-    if (
-      /\b(tell me about a (time|situation|project)|describe a (time|situation|challenge)|how do you handle (conflict|pressure|disagreement)|what is your biggest (weakness|strength|failure|achievement)|give me an example of|why do you want to (join|work)|where do you see yourself|why should we hire you|tell me about yourself)\b/i.test(
-        text
-      )
-    ) {
-      return 'behavioral'
-    }
-
-    // 3. Project / Architecture / System Design
-    if (
-      /\b(tech stack|technology stack|architecture|system design|design a|scale|scaling|database schema|postgres|redis|queue|microservice|monolith|funprint|funprinting|trade-offs|tradeoff|how would you architect|load balancer|latency|throughput|caching|kafka|rabbitmq|bullmq|acid)\b/i.test(
-        text
-      )
-    ) {
-      return 'architecture_project'
-    }
-
-    // 4. Conceptual / Verbal
-    return 'conceptual'
-  }
-
-  /**
-   * Check for question immediately (early detection) for high-confidence questions.
-   * If detected, accumulates the entire cumulative turn and binds anaphora.
-   */
-  checkEarlyDetection(text: string): DetectedQuestion | null {
-    if (this.isCandidateSpeaking) return null
-
-    const trimmedText = text.trim()
-    if (!trimmedText) return null
-
-    // Do not trigger early detection if chunk ends on an incomplete preposition/conjunction
-    if (
-      /\b(in|of|with|for|about|on|at|to|whether|whether the|and|or|because|if|as|that|into|from)\s*$/i.test(
-        trimmedText
-      )
-    ) {
-      return null
-    }
-
-    // Check direct candidate for question signals
-    let candidateText = trimmedText
-    let detection = this.evaluateCandidate(candidateText)
-
-    // If candidate text alone is not high confidence, check stitched with previous recent chunk
-    if ((!detection || detection.confidence < this.earlyDetectionThreshold) && this.recentChunks.length > 0) {
-      const prev = this.recentChunks
-        .filter((c) => c.text !== trimmedText && Date.now() - c.timestamp < 6000)
-        .slice(-1)[0]
-
-      if (prev) {
-        const stitched = `${prev.text} ${trimmedText}`.trim()
-        const stitchedDetection = this.evaluateCandidate(stitched)
-        if (stitchedDetection && stitchedDetection.confidence > (detection?.confidence || 0)) {
-          candidateText = stitched
-          detection = stitchedDetection
-        }
-      }
-    }
-
-    if (detection && detection.confidence >= this.earlyDetectionThreshold) {
-      const fullTurnText = this.getFullQuestionText(candidateText)
-      const { boundText, boundContext } = this.resolveAnaphora(candidateText, fullTurnText)
-
-      if (this.isDuplicateOrRecent(boundText)) {
-        return null
-      }
-
-      const category = this.categorizeQuestion(boundText)
-
-      console.log(
-        `[QuestionDetector] ⚡ EARLY DETECTION [${category}]: "${boundText}" (confidence: ${detection.confidence.toFixed(2)})`
-      )
-
-      // Clear transcript buffer so subsequent speech starts fresh and utteranceEnd doesn't duplicate
-      this.transcriptBuffer = []
-      this.markEmitted(boundText)
-      return {
-        ...detection,
-        text: boundText,
-        category,
-        boundContext
-      }
-    }
-
-    return null
-  }
-
   onUtteranceEnd(): void {
-    if (this.isCandidateSpeaking) return
+    if (this.turnChunks.length === 0) return
 
-    const bufferText = this.transcriptBuffer.join(' ').trim()
-    this.transcriptBuffer = []
-
-    const fullTurnText = this.getFullQuestionText(bufferText)
+    const fullTurnText = this.turnChunks.join(' ').trim()
     if (!fullTurnText) return
 
-    let detection = this.evaluateCandidate(fullTurnText)
-
-    if (!detection || detection.confidence < this.confidenceThreshold) {
-      if (fullTurnText) {
-        console.log(
-          `[QuestionDetector] Not a question: "${fullTurnText}" (confidence: ${detection?.confidence.toFixed(2) || '0.00'})`
-        )
-      }
+    const words = fullTurnText.split(/\s+/).filter(Boolean)
+    // Ignore trivial background noise or 1-word filler (e.g. "ok", "yeah")
+    if (words.length < 2) {
+      this.turnChunks = []
       return
     }
 
-    const { boundText, boundContext } = this.resolveAnaphora(bufferText, fullTurnText)
-
-    if (this.isDuplicateOrRecent(boundText)) {
-      console.log(`[QuestionDetector] Skipping utterance end - duplicate or recent: "${boundText}"`)
+    // Deduplication check: prevent re-firing identical questions within 8s
+    if (this.isDuplicateOrRecent(fullTurnText)) {
+      console.log(`[QuestionDetector] Skipping duplicate/recent turn: "${fullTurnText}"`)
+      this.turnChunks = []
       return
     }
-
-    const category = this.categorizeQuestion(boundText)
 
     console.log(
-      `[QuestionDetector] ✓ QUESTION DETECTED [${category}]: "${boundText}" (confidence: ${detection.confidence.toFixed(2)})`
+      `[QuestionDetector] ✓ COMPLETE TURN CAPTURED: "${fullTurnText}" (${words.length} words)`
     )
-    this.markEmitted(boundText)
+
+    this.markEmitted(fullTurnText)
+    // Clear turn chunks so subsequent interviewer speech starts clean
+    this.turnChunks = []
+    this.turnStartTime = Date.now()
+
     this.emit('questionDetected', {
-      ...detection,
-      text: boundText,
-      category,
-      boundContext
+      text: fullTurnText,
+      confidence: 1.0,
+      questionType: 'direct'
     })
+  }
+
+  /**
+   * Standalone check for compatibility if called explicitly.
+   */
+  checkEarlyDetection(_text: string): DetectedQuestion | null {
+    // Intentionally disabled in Parakeet AI:
+    // We do NOT fire mid-sentence on partial clauses. We wait for End-of-Utterance.
+    return null
   }
 
   private isDuplicateOrRecent(text: string): boolean {
@@ -425,129 +151,5 @@ export class QuestionDetector extends EventEmitter {
   private markEmitted(text: string): void {
     this.lastEmittedQuestion = text
     this.lastEmittedTime = Date.now()
-  }
-
-  private evaluateCandidate(text: string): DetectedQuestion | null {
-    const trimmed = text.trim()
-    if (!trimmed) return null
-    if (this.shouldIgnore(trimmed)) return null
-
-    const wordCount = trimmed.split(/\s+/).length
-    if (trimmed.length < this.minQuestionLength || wordCount < this.minWordCount) {
-      return null
-    }
-
-    return this.analyzeQuestion(trimmed)
-  }
-
-  private shouldIgnore(text: string): boolean {
-    for (const pattern of IGNORE_PATTERNS) {
-      if (pattern.test(text)) {
-        return true
-      }
-    }
-    return false
-  }
-
-  private analyzeQuestion(text: string): DetectedQuestion {
-    let confidence = 0
-    let questionType: DetectedQuestion['questionType'] = 'unknown'
-
-    // 1. Check for question mark (strong indicator)
-    if (text.includes('?')) {
-      confidence += 0.45
-      questionType = 'direct'
-    }
-
-    // 2. Break into sentences/clauses to handle conversational preambles
-    // e.g., "Building on our discussion, consider this. Explain your edge"
-    const sentences = text
-      .split(/(?<=[.!?])\s+|[\n\r]+/)
-      .map((s) => s.trim())
-      .filter((s) => s.length > 0)
-
-    let hasClauseStarter = false
-    let hasImperative = false
-
-    for (const sentence of sentences) {
-      for (const starter of CLAUSE_QUESTION_STARTERS) {
-        if (starter.test(sentence)) {
-          hasClauseStarter = true
-          if (questionType === 'unknown') questionType = 'direct'
-          break
-        }
-      }
-      for (const imp of CLAUSE_IMPERATIVE_STARTERS) {
-        if (imp.test(sentence)) {
-          hasImperative = true
-          if (questionType === 'unknown') questionType = 'indirect'
-          break
-        }
-      }
-    }
-
-    if (hasClauseStarter) confidence += 0.35
-    if (hasImperative) confidence += 0.40
-
-    // 3. Interview specific patterns
-    for (const pattern of INTERVIEW_PATTERNS) {
-      if (pattern.test(text)) {
-        confidence += 0.35
-        if (questionType === 'unknown') questionType = 'direct'
-        break
-      }
-    }
-
-    // 4. Interview topic keywords (boosts imperative questions like "Explain your edge educational background")
-    let hasInterviewTopic = false
-    for (const topic of INTERVIEW_TOPICS) {
-      if (topic.test(text)) {
-        hasInterviewTopic = true
-        break
-      }
-    }
-
-    if (hasInterviewTopic && (hasImperative || hasClauseStarter || text.includes('?'))) {
-      confidence += 0.25
-    }
-
-    // 5. Question endings
-    for (const pattern of QUESTION_ENDINGS) {
-      if (pattern.test(text)) {
-        confidence += 0.15
-        break
-      }
-    }
-
-    // 6. Sentence depth boost
-    const wordCount = text.split(/\s+/).length
-    if (wordCount >= 6) confidence += 0.05
-    if (wordCount >= 10) confidence += 0.05
-
-    // Normalize confidence to max 1.0
-    confidence = Math.min(confidence, 1.0)
-
-    return {
-      text,
-      confidence,
-      questionType
-    }
-  }
-
-  isQuestion(text: string): boolean {
-    const result = this.evaluateCandidate(text)
-    return Boolean(result && result.confidence >= this.confidenceThreshold)
-  }
-
-  clearBuffer(): void {
-    this.transcriptBuffer = []
-    this.recentChunks = []
-    this.interviewerTurnChunks = []
-    this.lastEmittedQuestion = ''
-    this.lastEmittedTime = 0
-  }
-
-  setConfidenceThreshold(threshold: number): void {
-    this.confidenceThreshold = Math.max(0.1, Math.min(1.0, threshold))
   }
 }

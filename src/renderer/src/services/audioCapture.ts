@@ -28,6 +28,7 @@ export class AudioCaptureService {
   private isCandidateSpeaking = false
   private candidateSpeechFrames = 0
   private candidateSilenceFrames = 0
+  private candidateSpeechStartTime = 0
 
   private isCapturing = false
   private options: AudioCaptureOptions
@@ -156,10 +157,10 @@ export class AudioCaptureService {
     this.candidateSourceNode.connect(this.candidateAnalyser)
 
     const buffer = new Float32Array(this.candidateAnalyser.fftSize)
-    const SPEECH_RMS_THRESHOLD = 0.025 // Voice activity threshold
-
+    let noiseFloor = 0.015
     this.candidateSpeechFrames = 0
     this.candidateSilenceFrames = 0
+    this.candidateSpeechStartTime = 0
     this.isCandidateSpeaking = false
 
     this.vadInterval = setInterval(() => {
@@ -172,28 +173,39 @@ export class AudioCaptureService {
       }
       const rms = Math.sqrt(sum / buffer.length)
 
-      if (rms > SPEECH_RMS_THRESHOLD) {
+      // Adaptive speech threshold based on environmental noise floor
+      const dynamicThreshold = Math.max(0.035, noiseFloor * 2.8)
+
+      if (rms > dynamicThreshold) {
         this.candidateSpeechFrames++
         this.candidateSilenceFrames = 0
 
-        // If voice sustained for ~150ms (3 frames of 50ms)
-        if (this.candidateSpeechFrames >= 3 && !this.isCandidateSpeaking) {
+        // Require at least 5 sustained frames (250ms) to avoid single clicks/bleed
+        if (this.candidateSpeechFrames >= 5 && !this.isCandidateSpeaking) {
           this.isCandidateSpeaking = true
+          this.candidateSpeechStartTime = Date.now()
           console.log('[AudioCapture] 🎙️ Candidate speaking detected (Microphone active)')
           if (window.api?.sendCandidateSpeakingState) {
             window.api.sendCandidateSpeakingState(true)
           }
         }
       } else {
+        // Adapt background noise floor smoothly during silence
+        noiseFloor = noiseFloor * 0.95 + rms * 0.05
         this.candidateSilenceFrames++
         this.candidateSpeechFrames = 0
 
         // If candidate silent for ~1000ms (20 frames of 50ms) after speaking
         if (this.candidateSilenceFrames >= 20 && this.isCandidateSpeaking) {
           this.isCandidateSpeaking = false
-          console.log('[AudioCapture] 🤫 Candidate finished speaking ──> Resetting turn boundary')
+          const speechDurationMs = Date.now() - this.candidateSpeechStartTime
+          const wasRealAnswer = speechDurationMs >= 2500 // At least 2.5s of speaking to be an actual answer
+
+          console.log(
+            `[AudioCapture] 🤫 Candidate stopped speaking (${speechDurationMs}ms, wasAnswer: ${wasRealAnswer})`
+          )
           if (window.api?.sendCandidateSpeakingState) {
-            window.api.sendCandidateSpeakingState(false)
+            window.api.sendCandidateSpeakingState(false, wasRealAnswer)
           }
         }
       }

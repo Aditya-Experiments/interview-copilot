@@ -87,8 +87,8 @@ const api = {
   stopCapture: (): Promise<{ success: boolean }> => ipcRenderer.invoke('stop-capture'),
   getCaptureStatus: (): Promise<boolean> => ipcRenderer.invoke('get-capture-status'),
   sendAudioData: (audioData: ArrayBuffer): void => ipcRenderer.send('audio-data', audioData),
-  sendCandidateSpeakingState: (isSpeaking: boolean): void =>
-    ipcRenderer.send('candidate-speaking-state', isSpeaking),
+  sendCandidateSpeakingState: (isSpeaking: boolean, wasAnswer?: boolean): void =>
+    ipcRenderer.send('candidate-speaking-state', isSpeaking, wasAnswer),
   resetTurnBoundary: (): Promise<{ success: boolean }> => ipcRenderer.invoke('reset-turn-boundary'),
   getAudioSources: (): Promise<AudioSource[]> => ipcRenderer.invoke('get-audio-sources'),
 

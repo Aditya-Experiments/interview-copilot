@@ -26,26 +26,12 @@ export interface OpenAIConfig {
 export type QuestionGlanceCategory = 'architecture_project' | 'behavioral' | 'coding' | 'conceptual' | 'unknown'
 
 export const getGlanceModeSystemPrompt = (
-  resumeDescription?: string,
-  category?: QuestionGlanceCategory
+  resumeDescription?: string
 ): string => {
   const resumeText = resumeDescription?.trim() || ''
 
-  const categoryDirective = category
-    ? `\nDETECTED QUESTION CATEGORY: [${category.toUpperCase()}]. Prioritize rule #${
-        category === 'architecture_project'
-          ? '1 (PROJECT & ARCHITECTURE - NO CODE BLOCKS, 3-4 BOLD KEYWORD BULLETS, 1 TRADE-OFF)'
-          : category === 'behavioral'
-          ? '2 (BEHAVIORAL - STAR METHOD: SITUATION, TASK, ACTION, RESULT)'
-          : category === 'coding'
-          ? '3 (LEETCODE & CODING - CODE IMPLEMENTATION & COMPLEXITY)'
-          : '4 (CONCEPTUAL - CONCISE SPOKEN EXPLANATION)'
-      }.\n`
-    : ''
-
   return `You are a top-tier software engineer answering questions live in a real-time job interview.
 Your answer is rendered in GLANCE MODE—it must be instantly scannable by the candidate's eyes in 2 seconds while looking at the camera, and designed to be spoken conversationally out loud in 30–45 seconds.
-${categoryDirective}
 ${
   resumeText
     ? `CANDIDATE BACKGROUND & RESUME:
@@ -53,6 +39,17 @@ ${resumeText}
 Ground technical choices in this background. Speak in the first person ("I built...", "In FunPrinting, I chose...").`
     : ''
 }
+
+INTENT & CATEGORY RULE (CRITICAL):
+1. If the interviewer's turn is purely conversational filler, acknowledgment, small talk, pleasantry, or positive feedback without asking a question or technical scenario (e.g., "Sounds good", "Okay great", "Thanks", "I see", "Yeah right", "Let's move on", "Understood"), you MUST reply with STRICTLY and ONLY:
+[NO_QUESTION]
+
+2. If it contains an interview question, technical scenario, or problem to address, output the category tag on line 1:
+[CATEGORY:architecture_project]  <- For project architecture, system design, databases, scaling, trade-offs
+[CATEGORY:behavioral]            <- For behavioral, HR, conflict, leadership (STAR format)
+[CATEGORY:coding]                <- For DSA, LeetCode, write code, algorithms, Big-O
+[CATEGORY:conceptual]            <- For conceptual, technical verbal questions, differences, definitions
+Followed immediately on line 2 by your crisp Glance Mode answer formatted according to that category.
 
 LANGUAGE: Regardless of the interviewer's language (English, Hindi, Hinglish), ALWAYS answer in crisp, professional English.
 
@@ -90,15 +87,10 @@ GENERAL SPEECH CONSTRAINTS:
 }
 
 const getSolutionSystemPrompt = (
-  questionType?: 'leetcode' | 'system-design' | 'other',
+  _questionType?: 'leetcode' | 'system-design' | 'other',
   resumeDescription?: string
 ): string => {
-  const categoryMap: Record<string, QuestionGlanceCategory> = {
-    leetcode: 'coding',
-    'system-design': 'architecture_project',
-    other: 'conceptual'
-  }
-  return getGlanceModeSystemPrompt(resumeDescription, questionType ? categoryMap[questionType] : undefined)
+  return getGlanceModeSystemPrompt(resumeDescription)
 }
 
 interface ProviderAttempt {
@@ -113,11 +105,23 @@ export class OpenAIService extends EventEmitter {
   private conversationHistory: Message[] = []
   private maxHistoryLength = 10
   private systemPrompt: string = ''
+  private activeAbortController: AbortController | null = null
 
   constructor(config: OpenAIConfig) {
     super()
     this.config = config
     this.systemPrompt = getGlanceModeSystemPrompt(config.resumeDescription || '')
+  }
+
+  /**
+   * Aborts any in-flight LLM generation (e.g. when a new turn arrives or candidate speaks).
+   */
+  public abortActiveGeneration(): void {
+    if (this.activeAbortController) {
+      console.log('[OpenAIService] 🛑 Aborting active generation in flight')
+      this.activeAbortController.abort()
+      this.activeAbortController = null
+    }
   }
 
   private getProviderAttempts(): ProviderAttempt[] {
@@ -206,15 +210,169 @@ export class OpenAIService extends EventEmitter {
     }
   }
 
+  /**
+   * Consumes an async stream of tokens from any LLM provider.
+   * - Filters out [NO_QUESTION] small-talk/acknowledgment responses silently without emitting.
+   * - Emits 'questionConfirmed' on the very first confirmed token.
+   * - Honors AbortSignal on every chunk.
+   */
+  private async processStreamWithFilter(
+    chunkIterator: AsyncIterable<string>,
+    abortSignal: AbortSignal,
+    questionContext: { question: string; category?: QuestionGlanceCategory }
+  ): Promise<{ fullResponse: string; isSuppressed: boolean; wasAborted: boolean }> {
+    let fullResponse = ''
+    let isSuppressed = false
+    let isConfirmed = false
+    let buffer = ''
+    const NO_QUESTION_TAG = '[NO_QUESTION]'
+
+    try {
+      for await (const chunk of chunkIterator) {
+        if (abortSignal.aborted) {
+          return { fullResponse, isSuppressed: false, wasAborted: true }
+        }
+
+        if (!chunk) continue
+
+        if (isSuppressed) {
+          fullResponse += chunk
+          continue
+        }
+
+        if (isConfirmed) {
+          fullResponse += chunk
+          this.emit('stream', chunk)
+          continue
+        }
+
+        // We are in the initial buffering phase
+        buffer += chunk
+        const trimmed = buffer.trimStart()
+
+        if (trimmed.length === 0) {
+          continue
+        }
+
+        const normalized = trimmed.replace(/^[\s*#_`]+/, '').toUpperCase()
+
+        if (
+          normalized.startsWith(NO_QUESTION_TAG) ||
+          normalized.startsWith('NO_QUESTION') ||
+          normalized.startsWith('NO QUESTION')
+        ) {
+          isSuppressed = true
+          fullResponse += buffer
+          console.log(`[OpenAIService] 🤫 Suppressed conversational filler response: "${trimmed.trim()}"`)
+          continue
+        }
+
+        // If buffer is still a prefix of '[NO_QUESTION]' and shorter, wait for more chunks
+        if (NO_QUESTION_TAG.startsWith(normalized) && normalized.length < NO_QUESTION_TAG.length) {
+          continue
+        }
+
+        // If buffer might be starting with [CATEGORY: wait until ']' arrives
+        if (
+          (normalized.startsWith('[CATEGORY') || normalized.startsWith('CATEGORY:')) &&
+          !buffer.includes(']') &&
+          buffer.length < 50
+        ) {
+          continue
+        }
+
+        // Confirmed real question response!
+        isConfirmed = true
+
+        let detectedCategory = questionContext.category
+        const catMatch = buffer.match(/\[CATEGORY:\s*([a-zA-Z0-9_]+)\]\s*\n?/i)
+        if (catMatch) {
+          const raw = catMatch[1].toLowerCase()
+          if (
+            raw === 'architecture_project' ||
+            raw === 'behavioral' ||
+            raw === 'coding' ||
+            raw === 'conceptual'
+          ) {
+            detectedCategory = raw as QuestionGlanceCategory
+          }
+          buffer = buffer.replace(catMatch[0], '')
+        }
+
+        this.emit('questionConfirmed', {
+          question: questionContext.question,
+          category: detectedCategory || 'conceptual'
+        })
+
+        if (buffer) {
+          fullResponse += buffer
+          this.emit('stream', buffer)
+        }
+        buffer = ''
+      }
+    } catch (streamErr: any) {
+      if (abortSignal.aborted) {
+        return { fullResponse, isSuppressed: false, wasAborted: true }
+      }
+      if (
+        fullResponse.trim().length > 30 &&
+        (streamErr?.message?.includes('EOF') || streamErr?.message?.includes('stream'))
+      ) {
+        console.warn(`[OpenAIService] Stream ended with unexpected EOF, preserved response (${fullResponse.length} chars)`)
+      } else {
+        throw streamErr
+      }
+    }
+
+    if (!isConfirmed && !isSuppressed && buffer.length > 0) {
+      const normalized = buffer.trim().replace(/^[\s*#_`]+/, '').toUpperCase()
+      if (
+        normalized.startsWith(NO_QUESTION_TAG) ||
+        normalized.startsWith('NO_QUESTION') ||
+        normalized.startsWith('NO QUESTION')
+      ) {
+        isSuppressed = true
+      } else {
+        let detectedCategory = questionContext.category
+        const catMatch = buffer.match(/\[CATEGORY:\s*([a-zA-Z0-9_]+)\]\s*\n?/i)
+        if (catMatch) {
+          const raw = catMatch[1].toLowerCase()
+          if (
+            raw === 'architecture_project' ||
+            raw === 'behavioral' ||
+            raw === 'coding' ||
+            raw === 'conceptual'
+          ) {
+            detectedCategory = raw as QuestionGlanceCategory
+          }
+          buffer = buffer.replace(catMatch[0], '')
+        }
+        this.emit('questionConfirmed', {
+          question: questionContext.question,
+          category: detectedCategory || 'conceptual'
+        })
+        if (buffer) {
+          fullResponse += buffer
+          this.emit('stream', buffer)
+        }
+      }
+    }
+
+    return { fullResponse, isSuppressed, wasAborted: abortSignal.aborted }
+  }
+
   async generateAnswer(question: string, category?: QuestionGlanceCategory): Promise<string> {
     const attempts = this.getProviderAttempts()
     if (attempts.length === 0) {
       throw new Error('No API keys configured. Please add an API key in Settings.')
     }
 
-    const activeSystemPrompt = category
-      ? getGlanceModeSystemPrompt(this.config.resumeDescription, category)
-      : this.systemPrompt
+    // Single-flight guarantee: abort any previous answer generation
+    this.abortActiveGeneration()
+    const currentAbortController = new AbortController()
+    this.activeAbortController = currentAbortController
+
+    const activeSystemPrompt = this.systemPrompt
 
     // Add the question to history
     this.conversationHistory.push({
@@ -230,10 +388,16 @@ export class OpenAIService extends EventEmitter {
     let lastError: unknown = null
 
     for (let i = 0; i < attempts.length; i++) {
+      if (currentAbortController.signal.aborted) {
+        console.log('[OpenAIService] Generation aborted before provider attempt')
+        return ''
+      }
+
       const attempt = attempts[i]
-      let fullResponse = ''
 
       try {
+        let streamResult: { fullResponse: string; isSuppressed: boolean; wasAborted: boolean }
+
         if (attempt.provider === 'groq') {
           const client = new OpenAI({
             apiKey: attempt.key,
@@ -245,7 +409,6 @@ export class OpenAIService extends EventEmitter {
             ...this.conversationHistory
           ]
 
-          // Candidate models: attempt's selected model first, followed by known available models
           const candidateModels = [
             attempt.model,
             'qwen/qwen3.8-27b',
@@ -259,18 +422,27 @@ export class OpenAIService extends EventEmitter {
           let lastGroqErr: any = null
 
           for (const candModel of candidateModels) {
+            if (currentAbortController.signal.aborted) return ''
             try {
-              stream = await client.chat.completions.create({
-                model: candModel,
-                messages: messages,
-                max_completion_tokens: this.config.maxTokens || 1200,
-                temperature: this.config.temperature || 0.7,
-                stream: true
-              })
+              stream = await client.chat.completions.create(
+                {
+                  model: candModel,
+                  messages: messages,
+                  max_completion_tokens: this.config.maxTokens || 1200,
+                  temperature: this.config.temperature || 0.7,
+                  stream: true
+                },
+                { signal: currentAbortController.signal }
+              )
               break
             } catch (candErr: any) {
+              if (currentAbortController.signal.aborted || candErr?.name === 'AbortError') {
+                return ''
+              }
               lastGroqErr = candErr
-              console.warn(`Groq model "${candModel}" error (${candErr?.message || 'unknown'}). Retrying next candidate...`)
+              console.warn(
+                `Groq model "${candModel}" error (${candErr?.message || 'unknown'}). Retrying next candidate...`
+              )
             }
           }
 
@@ -278,21 +450,18 @@ export class OpenAIService extends EventEmitter {
             throw lastGroqErr
           }
 
-          try {
+          async function* getGroqChunks() {
             for await (const chunk of stream) {
               const content = chunk.choices[0]?.delta?.content || ''
-              if (content) {
-                fullResponse += content
-                this.emit('stream', content)
-              }
-            }
-          } catch (streamErr: any) {
-            if (fullResponse.trim().length > 50 && (streamErr?.message?.includes('EOF') || streamErr?.message?.includes('stream'))) {
-              console.warn(`Groq stream ended with unexpected EOF, but preserved response (${fullResponse.length} chars)`)
-            } else {
-              throw streamErr
+              if (content) yield content
             }
           }
+
+          streamResult = await this.processStreamWithFilter(
+            getGroqChunks(),
+            currentAbortController.signal,
+            { question, category }
+          )
         } else if (attempt.provider === 'openai') {
           const client = new OpenAI({
             apiKey: attempt.key
@@ -303,29 +472,29 @@ export class OpenAIService extends EventEmitter {
             ...this.conversationHistory
           ]
 
-          const stream = await client.chat.completions.create({
-            model: attempt.model,
-            messages: messages,
-            max_completion_tokens: this.config.maxTokens || 1200,
-            temperature: this.config.temperature || 0.7,
-            stream: true
-          })
+          const stream = await client.chat.completions.create(
+            {
+              model: attempt.model,
+              messages: messages,
+              max_completion_tokens: this.config.maxTokens || 1200,
+              temperature: this.config.temperature || 0.7,
+              stream: true
+            },
+            { signal: currentAbortController.signal }
+          )
 
-          try {
+          async function* getOpenAiChunks() {
             for await (const chunk of stream) {
               const content = chunk.choices[0]?.delta?.content || ''
-              if (content) {
-                fullResponse += content
-                this.emit('stream', content)
-              }
-            }
-          } catch (streamErr: any) {
-            if (fullResponse.trim().length > 50 && (streamErr?.message?.includes('EOF') || streamErr?.message?.includes('stream'))) {
-              console.warn(`OpenAI stream ended with unexpected EOF, but preserved response (${fullResponse.length} chars)`)
-            } else {
-              throw streamErr
+              if (content) yield content
             }
           }
+
+          streamResult = await this.processStreamWithFilter(
+            getOpenAiChunks(),
+            currentAbortController.signal,
+            { question, category }
+          )
         } else {
           // Google Gemini (with zero thinking tokens)
           const ai = new GoogleGenAI({ apiKey: attempt.key })
@@ -368,32 +537,50 @@ export class OpenAIService extends EventEmitter {
             stream = await createStream('gemini-3.5-flash-lite')
           }
 
-          try {
+          async function* getGeminiChunks() {
             for await (const chunk of stream) {
               const content = chunk.text || ''
-              if (content) {
-                fullResponse += content
-                this.emit('stream', content)
-              }
-            }
-          } catch (streamErr: any) {
-            if (fullResponse.trim().length > 50 && (streamErr?.message?.includes('EOF') || streamErr?.message?.includes('stream'))) {
-              console.warn(`Gemini stream ended with unexpected EOF, but preserved response (${fullResponse.length} chars)`)
-            } else {
-              throw streamErr
+              if (content) yield content
             }
           }
+
+          streamResult = await this.processStreamWithFilter(
+            getGeminiChunks(),
+            currentAbortController.signal,
+            { question, category }
+          )
+        }
+
+        if (streamResult.wasAborted) {
+          console.log('[OpenAIService] Generation aborted during streaming')
+          return ''
+        }
+
+        if (streamResult.isSuppressed) {
+          console.log('[OpenAIService] Non-question acknowledgment suppressed. Trimming conversational history.')
+          if (
+            this.conversationHistory.length > 0 &&
+            this.conversationHistory[this.conversationHistory.length - 1].role === 'user'
+          ) {
+            this.conversationHistory.pop()
+          }
+          return ''
         }
 
         // Successfully generated answer
         this.conversationHistory.push({
           role: 'assistant',
-          content: fullResponse
+          content: streamResult.fullResponse
         })
 
-        this.emit('complete', fullResponse)
-        return fullResponse
+        this.emit('complete', streamResult.fullResponse)
+        return streamResult.fullResponse
       } catch (err: any) {
+        if (currentAbortController.signal.aborted || err?.name === 'AbortError' || err?.message?.includes('abort')) {
+          console.log('[OpenAIService] Generation aborted by new turn request')
+          return ''
+        }
+
         lastError = err
         const hasNext = i + 1 < attempts.length
         if (hasNext) {

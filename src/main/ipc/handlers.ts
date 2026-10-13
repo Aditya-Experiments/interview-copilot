@@ -20,6 +20,7 @@ let screenshotService: ScreenshotService | null = null
 let visionService: VisionService | null = null
 let mainWindow: BrowserWindow | null = null
 let isCapturing = false
+let utteranceDebounceTimer: NodeJS.Timeout | null = null
 
 export function sendAppLog(
   level: 'info' | 'warn' | 'error' | 'success',
@@ -308,6 +309,16 @@ export function initializeIpcHandlers(window: BrowserWindow): void {
       })
 
       // Set up OpenAI event listeners ONCE
+      openaiService.on('questionConfirmed', (ctx: { question: string; category?: string }) => {
+        console.log(`[Handlers] ⚡ LLM confirmed question intent [${ctx.category || 'Glance'}]: "${ctx.question.slice(0, 50)}..."`)
+        mainWindow?.webContents.send('question-detected', {
+          text: ctx.question,
+          category: ctx.category || 'conceptual',
+          confidence: 1.0,
+          questionType: 'direct'
+        })
+      })
+
       openaiService.on('stream', (chunk) => {
         mainWindow?.webContents.send('answer-stream', chunk)
       })
@@ -323,49 +334,40 @@ export function initializeIpcHandlers(window: BrowserWindow): void {
 
       // Set up STT event listeners
       activeSttService.on('transcript', async (event) => {
-        console.log('Transcript received:', event.text)
         sendAppLog('info', 'STT', `[${event.isFinal ? 'FINAL' : 'LIVE'}] ${event.text}`)
         questionDetector?.addTranscript(event.text, event.isFinal)
         mainWindow?.webContents.send('transcript', event)
 
-        // Try early detection for faster response on high-confidence questions
-        if (event.isFinal && questionDetector && openaiService) {
-          const earlyDetection = questionDetector.checkEarlyDetection(event.text)
-          if (earlyDetection) {
-            console.log('Early question detection triggered:', earlyDetection.text)
-            sendAppLog(
-              'success',
-              'Detector',
-              `⚡ Early question detected [${earlyDetection.category || 'Glance'}]: "${earlyDetection.text}"`
-            )
-            if (earlyDetection.boundContext) {
-              sendAppLog('info', 'Anaphora', earlyDetection.boundContext)
-            }
-            mainWindow?.webContents.send('question-detected', earlyDetection)
-            try {
-              sendAppLog(
-                'info',
-                'AI',
-                `Streaming [${earlyDetection.category || 'Glance'}] answer for: "${earlyDetection.text.slice(0, 50)}..."`
-              )
-              await openaiService.generateAnswer(earlyDetection.text, earlyDetection.category)
-            } catch (error) {
-              const errMsg = (error as Error).message
-              sendAppLog('error', 'AI', `Answer error: ${errMsg}`)
-              mainWindow?.webContents.send('answer-error', errMsg)
-            }
+        // End-of-Utterance Fallback:
+        // If STT provider does not fire utteranceEnd, trigger turn completion
+        // after 1000ms pause following a finalized clause.
+        if (event.isFinal) {
+          if (utteranceDebounceTimer) {
+            clearTimeout(utteranceDebounceTimer)
           }
+          utteranceDebounceTimer = setTimeout(() => {
+            console.log('[Handlers] ⏱️ Utterance pause detected (1000ms debounce) ──> Turn complete')
+            questionDetector?.onUtteranceEnd()
+          }, 1000)
         }
       })
 
       activeSttService.on('utteranceEnd', () => {
         console.log('Processing utterance...')
         sendAppLog('info', 'Audio', 'Utterance pause detected')
+        if (utteranceDebounceTimer) {
+          clearTimeout(utteranceDebounceTimer)
+          utteranceDebounceTimer = null
+        }
         questionDetector?.onUtteranceEnd()
         mainWindow?.webContents.send('utterance-end')
       })
 
       activeSttService.on('speechStarted', () => {
+        if (utteranceDebounceTimer) {
+          clearTimeout(utteranceDebounceTimer)
+          utteranceDebounceTimer = null
+        }
         sendAppLog('info', 'Audio', 'Speech started')
         mainWindow?.webContents.send('speech-started')
       })
@@ -383,29 +385,27 @@ export function initializeIpcHandlers(window: BrowserWindow): void {
 
       // Set up question detector listener ONCE
       questionDetector?.on('questionDetected', async (detection) => {
-        console.log('Question detected:', detection.text)
+        console.log('Complete turn captured:', detection.text)
         sendAppLog(
-          'success',
-          'Detector',
-          `Question detected [${detection.category || 'Glance'}]: "${detection.text}" (${(detection.confidence * 100).toFixed(0)}% conf)`
+          'info',
+          'Turn',
+          `Turn captured: "${detection.text}"`
         )
-        if (detection.boundContext) {
-          sendAppLog('info', 'Anaphora', detection.boundContext)
-        }
-        mainWindow?.webContents.send('question-detected', detection)
 
         if (openaiService) {
           try {
             sendAppLog(
               'info',
               'AI',
-              `Streaming [${detection.category || 'Glance'}] answer for: "${detection.text.slice(0, 50)}..."`
+              `Analyzing intent & generating answer for: "${detection.text.slice(0, 50)}..."`
             )
-            await openaiService.generateAnswer(detection.text, detection.category)
+            await openaiService.generateAnswer(detection.text)
           } catch (error) {
             const errMsg = (error as Error).message
-            sendAppLog('error', 'AI', `Answer error: ${errMsg}`)
-            mainWindow?.webContents.send('answer-error', errMsg)
+            if (!errMsg.includes('aborted') && !errMsg.includes('AbortError')) {
+              sendAppLog('error', 'AI', `Answer error: ${errMsg}`)
+              mainWindow?.webContents.send('answer-error', errMsg)
+            }
           }
         }
       })
@@ -431,6 +431,11 @@ export function initializeIpcHandlers(window: BrowserWindow): void {
   ipcMain.handle('stop-capture', async () => {
     isCapturing = false
 
+    if (utteranceDebounceTimer) {
+      clearTimeout(utteranceDebounceTimer)
+      utteranceDebounceTimer = null
+    }
+
     if (activeSttService) {
       activeSttService.stop()
       activeSttService.removeAllListeners()
@@ -440,6 +445,7 @@ export function initializeIpcHandlers(window: BrowserWindow): void {
     }
 
     if (openaiService) {
+      openaiService.abortActiveGeneration()
       openaiService.removeAllListeners()
       openaiService = null
     }
@@ -464,14 +470,19 @@ export function initializeIpcHandlers(window: BrowserWindow): void {
   })
 
   // Candidate speaking state from renderer (Candidate channel VAD)
-  ipcMain.on('candidate-speaking-state', (_event, isSpeaking: boolean) => {
+  ipcMain.on('candidate-speaking-state', (_event, isSpeaking: boolean, wasAnswer?: boolean) => {
     questionDetector?.setCandidateSpeaking(isSpeaking)
     mainWindow?.webContents.send('candidate-speaking', isSpeaking)
     if (isSpeaking) {
       sendAppLog('info', 'Candidate', 'Candidate speaking — question detection paused')
+      openaiService?.abortActiveGeneration()
     } else {
-      questionDetector?.turnBoundaryReset()
-      sendAppLog('info', 'Turn', 'Candidate finished speaking ──> Turn boundary reset (T=0)')
+      if (wasAnswer !== false) {
+        questionDetector?.turnBoundaryReset()
+        sendAppLog('info', 'Turn', 'Candidate finished speaking ──> Turn boundary reset (T=0)')
+      } else {
+        sendAppLog('info', 'Candidate', 'Candidate brief audio finished — turn preserved')
+      }
     }
   })
 

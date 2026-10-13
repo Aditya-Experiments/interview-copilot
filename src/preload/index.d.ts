@@ -74,7 +74,7 @@ export interface Api {
   stopCapture: () => Promise<{ success: boolean }>
   getCaptureStatus: () => Promise<boolean>
   sendAudioData: (audioData: ArrayBuffer) => void
-  sendCandidateSpeakingState: (isSpeaking: boolean) => void
+  sendCandidateSpeakingState: (isSpeaking: boolean, wasAnswer?: boolean) => void
   resetTurnBoundary: () => Promise<{ success: boolean }>
   getAudioSources: () => Promise<AudioSource[]>
 
