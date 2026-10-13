@@ -5,6 +5,7 @@ export interface DeepgramTranscriptEvent {
   text: string
   isFinal: boolean
   confidence: number
+  detectedLanguage?: string
 }
 
 export interface DeepgramConfig {
@@ -37,7 +38,8 @@ export class DeepgramService extends EventEmitter {
       this.client = new DeepgramClient({ apiKey })
       this.connection = await this.client.listen.v1.connect({
         model: (this.config.model || 'nova-2') as any,
-        language: (this.config.language || 'en') as any,
+        language: (this.config.language || 'multi') as any,
+        detect_language: 'true' as any,
         encoding: 'linear16' as any,
         sample_rate: 16000 as any,
         channels: 1 as any,
@@ -50,7 +52,7 @@ export class DeepgramService extends EventEmitter {
       } as any)
 
       this.connection.on('open', () => {
-        console.log('===> Deepgram Nova-2 live WebSocket connected')
+        console.log('===> Deepgram Nova-2 live WebSocket connected (multilingual mode)')
         this.emit('started')
       })
 
@@ -73,10 +75,15 @@ export class DeepgramService extends EventEmitter {
           if (transcript) {
             const isFinal = Boolean(data.is_final || data.speech_final)
             const confidence = alternative?.confidence || 0.95
+            const detectedLanguage =
+              data.channel?.detected_language ||
+              alternative?.languages?.[0] ||
+              'en'
             this.emit('transcript', {
               text: transcript,
               isFinal,
-              confidence
+              confidence,
+              detectedLanguage
             })
           }
         }

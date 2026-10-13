@@ -592,6 +592,62 @@ First, identify what the question is asking, then provide:
     throw lastError
   }
 
+  /**
+   * Fast, lightweight translation of non-English transcript to clean English.
+   * Used in the multilingual pipeline to normalize Hindi/Hinglish/other languages
+   * before question detection. Non-streaming for speed.
+   */
+  async quickTranslate(text: string): Promise<string> {
+    const attempts = this.getProviderAttempts()
+    if (attempts.length === 0) return text
+
+    const translationPrompt = `Translate the following speech transcript to clear, natural English.
+The speaker may be mixing Hindi, Hinglish, or other languages with English (code-switching).
+Preserve the original meaning and intent. If it's already in English, return it as-is.
+If it sounds like an interview question or instruction, format it as a clear question or instruction.
+Return ONLY the translated text, nothing else.
+
+Transcript: "${text}"`
+
+    for (const attempt of attempts) {
+      try {
+        if (attempt.provider === 'gemini') {
+          const ai = new GoogleGenAI({ apiKey: attempt.key })
+          const response = await ai.models.generateContent({
+            model: attempt.model,
+            contents: translationPrompt
+          })
+          const translated = response.text?.trim()
+          if (translated) return translated
+        } else {
+          // Groq or OpenAI — use OpenAI-compatible API
+          const baseURL =
+            attempt.provider === 'groq'
+              ? 'https://api.groq.com/openai/v1'
+              : 'https://api.openai.com/v1'
+          const client = new OpenAI({ apiKey: attempt.key, baseURL })
+          const response = await client.chat.completions.create({
+            model: attempt.model,
+            messages: [
+              { role: 'system', content: 'You are a fast translator. Output only the translated English text.' },
+              { role: 'user', content: translationPrompt }
+            ],
+            max_tokens: 300,
+            temperature: 0.1
+          })
+          const translated = response.choices?.[0]?.message?.content?.trim()
+          if (translated) return translated
+        }
+      } catch (err) {
+        console.warn(`quickTranslate failed with ${attempt.provider} key #${attempt.index}:`, err)
+        continue
+      }
+    }
+
+    // Fallback: return original text if all translation attempts fail
+    return text
+  }
+
   updateConfig(config: Partial<OpenAIConfig>): void {
     this.config = { ...this.config, ...config }
     if (config.resumeDescription !== undefined) {
