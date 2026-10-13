@@ -22,10 +22,11 @@ export class VisionService {
 
   constructor(config: VisionServiceConfig) {
     this.config = config
-    const isGemini = !config.apiKey?.trim().startsWith('sk-')
-    if (!isGemini) {
+    const key = config.apiKey?.trim() || ''
+    const isGemini = key.startsWith('AIza') || key.startsWith('AQ.') || (!key.startsWith('sk-') && !key.startsWith('gsk_'))
+    if (!isGemini && key.startsWith('sk-')) {
       this.client = new OpenAI({
-        apiKey: config.apiKey
+        apiKey: key
       })
     }
   }
@@ -37,14 +38,19 @@ export class VisionService {
    */
   async analyzeScreenshot(imageBase64: string): Promise<VisionAnalysisResult> {
     try {
+      const key = this.config.apiKey?.trim() || ''
+      if (key.startsWith('gsk_')) {
+        throw new Error('Groq API keys do not support image/vision analysis. Please add a free Google Gemini key or OpenAI key in Settings.')
+      }
+
       // Remove data URL prefix if present
       const base64Data = imageBase64.includes(',') ? imageBase64.split(',')[1] : imageBase64
-      const isGemini = !this.config.apiKey?.trim().startsWith('sk-')
+      const isGemini = key.startsWith('AIza') || key.startsWith('AQ.') || !key.startsWith('sk-')
 
       let content = ''
 
       if (isGemini) {
-        const ai = new GoogleGenAI({ apiKey: this.config.apiKey?.trim() })
+        const ai = new GoogleGenAI({ apiKey: key })
         const systemPrompt = `You are an expert at analyzing screenshots to detect interview questions. 
 Your task is to determine if the screenshot contains:
 1. A LeetCode coding problem (algorithm/data structure questions, programming challenges)
@@ -89,14 +95,21 @@ If you see any coding problem, algorithm, or technical question, set isQuestion 
         let response
         try {
           response = await ai.models.generateContent({
-            model: 'gemini-3.1-flash-lite',
-            ...requestPayload
-          })
-        } catch {
-          response = await ai.models.generateContent({
             model: 'gemini-3.5-flash-lite',
             ...requestPayload
           })
+        } catch {
+          try {
+            response = await ai.models.generateContent({
+              model: 'gemini-3.1-flash-lite',
+              ...requestPayload
+            })
+          } catch {
+            response = await ai.models.generateContent({
+              model: 'gemini-2.5-flash',
+              ...requestPayload
+            })
+          }
         }
 
         content = response.text || ''

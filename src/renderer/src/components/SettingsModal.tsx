@@ -409,7 +409,7 @@ export function SettingsModal(): React.JSX.Element | null {
             ].filter(Boolean).join(' & ')}
             linkText="Get Free Gemini Key →"
             linkUrl="https://aistudio.google.com/app/apikey"
-            description="Google AI Studio provides generous free rate limits for Gemini Flash-Lite and Flash models."
+            description="100% Free Multimodal Vision & Text. Powers Screenshot Solving (LeetCode / code snippets) and backup AI answers."
             keys={geminiKeys}
             onChange={(keys) => setLocalSettings({ ...localSettings, geminiApiKeys: keys })}
             placeholder="AIza... or AQ..."
