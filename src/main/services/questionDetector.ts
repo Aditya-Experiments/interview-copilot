@@ -17,7 +17,9 @@ const CLAUSE_QUESTION_STARTERS = [
 
 // Imperative question verbs common in interviews
 const CLAUSE_IMPERATIVE_STARTERS = [
-  /\b(tell me|describe|explain|walk me through|give me|share with me|elaborate on|clarify|detail)\b/i
+  /\b(tell me|describe|explain|walk me through|give me|share with me|elaborate on|clarify|detail)\b/i,
+  // Hindi/Hinglish imperative patterns (romanized — as transcribed by Deepgram language=multi)
+  /\b(batao|bataiye|bataye|samjhao|samjhaiye|samjhaye|boliye|bolna)\b/i
 ]
 
 // Question ending patterns
@@ -73,7 +75,16 @@ const INTERVIEW_PATTERNS = [
   /give me an example (of|when)/i,
   /how did you (handle|manage|resolve|approach)/i,
   /what was (the outcome|the result|your role)/i,
-  /what did you learn from/i
+  /what did you learn from/i,
+
+  // Hindi/Hinglish interview patterns (romanized — as transcribed by Deepgram language=multi)
+  /\b(kya|kaise|kab|kahan|kyun|kaun|kitna|kitne|konsa|konsi)\b/i,
+  /\b(aapne|tumne|apne)\s+.*(kiya|kiye|kari|kara|banaya|handle)/i,
+  /\b(aapka|tumhara|apna)\s+.*(experience|background|project|approach)/i,
+  /\b(explain|describe|batao|bataiye)\s+.*(karo|kijiye|kariye|karna)/i,
+  /\b(pichle|previous|last)\s+.*(project|company|role|job|kaam)/i,
+  /\bkya\s+(aap|tum|aapne|tumne)\b/i,
+  /\bkaise\s+(kiya|kare|karenge|handle|manage|solve)\b/i
 ]
 
 // Common topics probed during interviews
@@ -92,7 +103,9 @@ const IGNORE_PATTERNS = [
   /^(mm+|uh+|um+|ah+|oh+|hmm+)[\s.,!?]*$/i,
   /^(I see|I understand|got it|makes sense|sounds good|no problem)[\s.,!?]*$/i,
   /^(see you|have a nice day|take care|nice to meet you|pleasure meeting you)[\s.,!?]*$/i,
-  /^(let me see|let me think|let's see)[\s.,!?]*$/i
+  /^(let me see|let me think|let's see)[\s.,!?]*$/i,
+  // Hindi/Hinglish pleasantries to ignore
+  /^(haan|nahi|theek hai|theek|accha|sahi|bilkul|dhanyavaad|shukriya|namaste|alvida)[\s.,!?]*$/i
 ]
 
 interface RecentChunk {

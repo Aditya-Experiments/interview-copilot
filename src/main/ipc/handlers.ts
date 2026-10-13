@@ -285,47 +285,22 @@ export function initializeIpcHandlers(window: BrowserWindow): void {
         mainWindow?.webContents.send('answer-complete', answer)
       })
 
-      // Set up STT event listeners with multilingual translation pipeline
+      // Set up STT event listeners — multilingual transcripts go directly to question
+      // detector and LLM. Modern LLMs (Groq/Gemini/GPT) natively understand Hindi/Hinglish
+      // and respond in English — no separate translation step needed.
       activeSttService.on('transcript', async (event) => {
         const detectedLang = event.detectedLanguage || 'en'
-        const isNonEnglish = detectedLang !== 'en' && detectedLang !== 'en-US'
 
         console.log(`Transcript received [${detectedLang}]:`, event.text)
         sendAppLog('info', 'STT', `[${event.isFinal ? 'FINAL' : 'LIVE'}][${detectedLang}] ${event.text}`)
 
-        // Send raw transcript to renderer immediately (for live display)
+        // Feed multilingual transcript directly to question detector and renderer
+        questionDetector?.addTranscript(event.text, event.isFinal)
         mainWindow?.webContents.send('transcript', event)
-
-        // For final transcripts: translate non-English to English before question detection
-        let processedText = event.text
-        if (event.isFinal && isNonEnglish && openaiService) {
-          try {
-            sendAppLog('info', 'Translate', `Translating [${detectedLang}]: "${event.text.slice(0, 60)}..."`)
-            processedText = await openaiService.quickTranslate(event.text)
-            if (processedText !== event.text) {
-              sendAppLog('success', 'Translate', `Translated to: "${processedText.slice(0, 60)}..."`)
-              // Send translated transcript to renderer so the UI shows English
-              mainWindow?.webContents.send('transcript', {
-                text: processedText,
-                isFinal: true,
-                confidence: event.confidence,
-                detectedLanguage: 'en',
-                isTranslated: true,
-                originalText: event.text
-              })
-            }
-          } catch (err) {
-            console.warn('Translation failed, using raw transcript:', err)
-            // Fallback to raw transcript
-          }
-        }
-
-        // Feed (possibly translated) text to question detector
-        questionDetector?.addTranscript(processedText, event.isFinal)
 
         // Try early detection for faster response on high-confidence questions
         if (event.isFinal && questionDetector && openaiService) {
-          const earlyDetection = questionDetector.checkEarlyDetection(processedText)
+          const earlyDetection = questionDetector.checkEarlyDetection(event.text)
           if (earlyDetection) {
             console.log('Early question detection triggered:', earlyDetection.text)
             sendAppLog('success', 'Detector', `⚡ Early question detected: "${earlyDetection.text}"`)

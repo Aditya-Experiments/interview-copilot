@@ -35,6 +35,13 @@ Use this context naturally if relevant. Speak in the first person ("I built...",
     : ''
 }
 
+MULTILINGUAL COMPREHENSION:
+- The interviewer may ask questions in Hindi, Hinglish (Hindi-English mix), or any other language.
+- You MUST understand the intent of the question regardless of the input language.
+- You MUST ALWAYS respond exclusively in clear, professional English.
+- If the question mixes languages (e.g., "Apne pichle project mein deployment kaise handle kiya?"), interpret the full meaning and answer in English.
+- Treat technical terms (API, deployment, frontend, database, etc.) the same regardless of surrounding language.
+
 CORE GOAL: Generate answers that are SIMPLE, HUMAN, and VERY EASY TO SPEAK OUT LOUD in a live interview.
 
 SPEAKING & VOCABULARY RULES:
@@ -66,6 +73,8 @@ SPEAKING & VOCABULARY RULES:
 const getSolutionSystemPrompt = (questionType?: 'leetcode' | 'system-design' | 'other'): string => {
   if (questionType === 'leetcode') {
     return `You are a candidate solving a coding problem in a real-time interview. The interviewer is watching you think through the problem. Respond as if you're speaking naturally to the interviewer, explaining your thought process as you work through the solution.
+
+MULTILINGUAL INPUT: The interviewer may describe the problem in Hindi, Hinglish, or any language. Understand the intent fully and ALWAYS respond in English.
 
 CRITICAL - Interview Style:
 - Speak conversationally, like you're thinking out loud with the interviewer
@@ -110,6 +119,8 @@ Structure your response as if you're walking through the problem with the interv
 Format with clear headings and code blocks, but write the explanations in a conversational, natural tone. Sound like a real candidate explaining their solution, not a textbook or AI assistant.`
   } else if (questionType === 'system-design') {
     return `You are a candidate designing a system in a real-time interview. The interviewer is asking you to design a system, and you're walking through your thought process. Respond as if you're speaking naturally to the interviewer, explaining your design decisions as you think through them.
+
+MULTILINGUAL INPUT: The interviewer may describe the problem in Hindi, Hinglish, or any language. Understand the intent fully and ALWAYS respond in English.
 
 CRITICAL - Interview Style:
 - Speak conversationally, like you're discussing the design with the interviewer
@@ -158,6 +169,8 @@ Structure your response as if you're designing the system with the interviewer:
 Format with clear headings, but write the explanations conversationally. Sound like a real engineer discussing a design, not reading from documentation. Be thorough but natural.`
   } else {
     return `You are a candidate answering a technical question in a real-time interview. Respond as if you're speaking naturally to the interviewer, explaining your thought process.
+
+MULTILINGUAL INPUT: The interviewer may ask in Hindi, Hinglish, or any language. Understand the intent fully and ALWAYS respond in English.
 
 CRITICAL - Interview Style:
 - Speak conversationally and naturally
@@ -592,61 +605,6 @@ First, identify what the question is asking, then provide:
     throw lastError
   }
 
-  /**
-   * Fast, lightweight translation of non-English transcript to clean English.
-   * Used in the multilingual pipeline to normalize Hindi/Hinglish/other languages
-   * before question detection. Non-streaming for speed.
-   */
-  async quickTranslate(text: string): Promise<string> {
-    const attempts = this.getProviderAttempts()
-    if (attempts.length === 0) return text
-
-    const translationPrompt = `Translate the following speech transcript to clear, natural English.
-The speaker may be mixing Hindi, Hinglish, or other languages with English (code-switching).
-Preserve the original meaning and intent. If it's already in English, return it as-is.
-If it sounds like an interview question or instruction, format it as a clear question or instruction.
-Return ONLY the translated text, nothing else.
-
-Transcript: "${text}"`
-
-    for (const attempt of attempts) {
-      try {
-        if (attempt.provider === 'gemini') {
-          const ai = new GoogleGenAI({ apiKey: attempt.key })
-          const response = await ai.models.generateContent({
-            model: attempt.model,
-            contents: translationPrompt
-          })
-          const translated = response.text?.trim()
-          if (translated) return translated
-        } else {
-          // Groq or OpenAI — use OpenAI-compatible API
-          const baseURL =
-            attempt.provider === 'groq'
-              ? 'https://api.groq.com/openai/v1'
-              : 'https://api.openai.com/v1'
-          const client = new OpenAI({ apiKey: attempt.key, baseURL })
-          const response = await client.chat.completions.create({
-            model: attempt.model,
-            messages: [
-              { role: 'system', content: 'You are a fast translator. Output only the translated English text.' },
-              { role: 'user', content: translationPrompt }
-            ],
-            max_tokens: 300,
-            temperature: 0.1
-          })
-          const translated = response.choices?.[0]?.message?.content?.trim()
-          if (translated) return translated
-        }
-      } catch (err) {
-        console.warn(`quickTranslate failed with ${attempt.provider} key #${attempt.index}:`, err)
-        continue
-      }
-    }
-
-    // Fallback: return original text if all translation attempts fail
-    return text
-  }
 
   updateConfig(config: Partial<OpenAIConfig>): void {
     this.config = { ...this.config, ...config }
