@@ -250,35 +250,28 @@ export class QuestionDetector extends EventEmitter {
 
   /**
    * Reconstructs the complete question by joining all chunks spoken since the turn began.
-   * Turn Persistence: Breathing pauses do not reset the turn context.
+   * Chunks are deduplicated and joined in strict chronological order.
    */
-  private getFullQuestionText(triggerText: string): string {
-    const chunks: string[] = []
+  private getFullQuestionText(): string {
+    const orderedChunks: string[] = []
 
-    // 1. Gather all chunks from current interviewer turn (since turnStartTime and lastEmittedTime)
     for (const c of this.interviewerTurnChunks) {
-      if (c.timestamp >= this.turnStartTime && c.timestamp > this.lastEmittedTime) {
-        if (chunks.length === 0 || chunks[chunks.length - 1] !== c.text) {
-          chunks.push(c.text)
+      if (c.timestamp >= this.turnStartTime) {
+        const text = c.text.trim()
+        if (text && !orderedChunks.includes(text)) {
+          orderedChunks.push(text)
         }
       }
     }
 
-    // 2. Include any pending buffer texts
     for (const bufText of this.transcriptBuffer) {
-      if (!chunks.includes(bufText)) {
-        chunks.push(bufText)
+      const text = bufText.trim()
+      if (text && !orderedChunks.includes(text)) {
+        orderedChunks.push(text)
       }
     }
 
-    let fullText = chunks.join(' ').trim()
-    if (!fullText) {
-      fullText = triggerText
-    } else if (!fullText.includes(triggerText)) {
-      fullText = `${fullText} ${triggerText}`.trim()
-    }
-
-    return fullText
+    return orderedChunks.join(' ').trim()
   }
 
   /**
@@ -317,8 +310,7 @@ export class QuestionDetector extends EventEmitter {
   }
 
   /**
-   * Check for question immediately (early detection) for high-confidence questions.
-   * If detected, accumulates the entire cumulative turn and binds anaphora.
+   * Check for question immediately (early detection) for high-confidence standalone questions.
    */
   checkEarlyDetection(text: string): DetectedQuestion | null {
     const trimmedText = text.trim()
@@ -333,29 +325,10 @@ export class QuestionDetector extends EventEmitter {
       return null
     }
 
-    // Check direct candidate for question signals
-    let candidateText = trimmedText
-    let detection = this.evaluateCandidate(candidateText)
-
-    // If candidate text alone is not high confidence, check stitched with previous recent chunk
-    if ((!detection || detection.confidence < this.earlyDetectionThreshold) && this.recentChunks.length > 0) {
-      const prev = this.recentChunks
-        .filter((c) => c.text !== trimmedText && Date.now() - c.timestamp < 6000)
-        .slice(-1)[0]
-
-      if (prev) {
-        const stitched = `${prev.text} ${trimmedText}`.trim()
-        const stitchedDetection = this.evaluateCandidate(stitched)
-        if (stitchedDetection && stitchedDetection.confidence > (detection?.confidence || 0)) {
-          candidateText = stitched
-          detection = stitchedDetection
-        }
-      }
-    }
-
+    const detection = this.evaluateCandidate(trimmedText)
     if (detection && detection.confidence >= this.earlyDetectionThreshold) {
-      const fullTurnText = this.getFullQuestionText(candidateText)
-      const { boundText, boundContext } = this.resolveAnaphora(candidateText, fullTurnText)
+      const fullTurnText = this.getFullQuestionText() || trimmedText
+      const { boundText, boundContext } = this.resolveAnaphora(trimmedText, fullTurnText)
 
       if (this.isDuplicateOrRecent(boundText)) {
         return null
@@ -367,9 +340,11 @@ export class QuestionDetector extends EventEmitter {
         `[QuestionDetector] ⚡ EARLY DETECTION [${category}]: "${boundText}" (confidence: ${detection.confidence.toFixed(2)})`
       )
 
-      // Clear transcript buffer so subsequent speech starts fresh and utteranceEnd doesn't duplicate
-      this.transcriptBuffer = []
       this.markEmitted(boundText)
+      this.transcriptBuffer = []
+      this.interviewerTurnChunks = []
+      this.turnStartTime = Date.now()
+
       return {
         ...detection,
         text: boundText,
@@ -382,24 +357,19 @@ export class QuestionDetector extends EventEmitter {
   }
 
   onUtteranceEnd(): void {
-    const bufferText = this.transcriptBuffer.join(' ').trim()
-    this.transcriptBuffer = []
-
-    const fullTurnText = this.getFullQuestionText(bufferText)
+    const fullTurnText = this.getFullQuestionText()
     if (!fullTurnText) return
 
-    let detection = this.evaluateCandidate(fullTurnText)
+    const detection = this.evaluateCandidate(fullTurnText)
 
     if (!detection || detection.confidence < this.confidenceThreshold) {
-      if (fullTurnText) {
-        console.log(
-          `[QuestionDetector] Not a question: "${fullTurnText}" (confidence: ${detection?.confidence.toFixed(2) || '0.00'})`
-        )
-      }
+      console.log(
+        `[QuestionDetector] Not a question: "${fullTurnText}" (confidence: ${detection?.confidence.toFixed(2) || '0.00'})`
+      )
       return
     }
 
-    const { boundText, boundContext } = this.resolveAnaphora(bufferText, fullTurnText)
+    const { boundText, boundContext } = this.resolveAnaphora(fullTurnText, fullTurnText)
 
     if (this.isDuplicateOrRecent(boundText)) {
       console.log(`[QuestionDetector] Skipping utterance end - duplicate or recent: "${boundText}"`)
@@ -411,7 +381,13 @@ export class QuestionDetector extends EventEmitter {
     console.log(
       `[QuestionDetector] ✓ QUESTION DETECTED [${category}]: "${boundText}" (confidence: ${detection.confidence.toFixed(2)})`
     )
+
     this.markEmitted(boundText)
+    // Clear turn buffers so next interviewer turn starts fresh
+    this.transcriptBuffer = []
+    this.interviewerTurnChunks = []
+    this.turnStartTime = Date.now()
+
     this.emit('questionDetected', {
       ...detection,
       text: boundText,

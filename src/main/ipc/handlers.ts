@@ -321,51 +321,43 @@ export function initializeIpcHandlers(window: BrowserWindow): void {
         mainWindow?.webContents.send('answer-complete', answer)
       })
 
+      let utteranceDebounceTimer: NodeJS.Timeout | null = null
+
+      const triggerUtteranceEvaluation = () => {
+        if (utteranceDebounceTimer) {
+          clearTimeout(utteranceDebounceTimer)
+          utteranceDebounceTimer = null
+        }
+        questionDetector?.onUtteranceEnd()
+      }
+
       // Set up STT event listeners
-      activeSttService.on('transcript', async (event) => {
-        console.log('Transcript received:', event.text)
+      activeSttService.on('transcript', (event) => {
         sendAppLog('info', 'STT', `[${event.isFinal ? 'FINAL' : 'LIVE'}] ${event.text}`)
         questionDetector?.addTranscript(event.text, event.isFinal)
         mainWindow?.webContents.send('transcript', event)
 
-        // Try early detection for faster response on high-confidence questions
-        if (event.isFinal && questionDetector && openaiService) {
-          const earlyDetection = questionDetector.checkEarlyDetection(event.text)
-          if (earlyDetection) {
-            console.log('Early question detection triggered:', earlyDetection.text)
-            sendAppLog(
-              'success',
-              'Detector',
-              `⚡ Early question detected [${earlyDetection.category || 'Glance'}]: "${earlyDetection.text}"`
-            )
-            if (earlyDetection.boundContext) {
-              sendAppLog('info', 'Anaphora', earlyDetection.boundContext)
-            }
-            mainWindow?.webContents.send('question-detected', earlyDetection)
-            try {
-              sendAppLog(
-                'info',
-                'AI',
-                `Streaming [${earlyDetection.category || 'Glance'}] answer for: "${earlyDetection.text.slice(0, 50)}..."`
-              )
-              await openaiService.generateAnswer(earlyDetection.text, earlyDetection.category)
-            } catch (error) {
-              const errMsg = (error as Error).message
-              sendAppLog('error', 'AI', `Answer error: ${errMsg}`)
-              mainWindow?.webContents.send('answer-error', errMsg)
-            }
-          }
+        if (event.isFinal) {
+          // Debounce fallback: if speaker pauses for 1200ms without new final chunks, evaluate the full question
+          if (utteranceDebounceTimer) clearTimeout(utteranceDebounceTimer)
+          utteranceDebounceTimer = setTimeout(() => {
+            triggerUtteranceEvaluation()
+          }, 1200)
         }
       })
 
       activeSttService.on('utteranceEnd', () => {
-        console.log('Processing utterance...')
         sendAppLog('info', 'Audio', 'Utterance pause detected')
-        questionDetector?.onUtteranceEnd()
+        triggerUtteranceEvaluation()
         mainWindow?.webContents.send('utterance-end')
       })
 
       activeSttService.on('speechStarted', () => {
+        // Speaker speaking: cancel pending utterance debounce
+        if (utteranceDebounceTimer) {
+          clearTimeout(utteranceDebounceTimer)
+          utteranceDebounceTimer = null
+        }
         sendAppLog('info', 'Audio', 'Speech started')
         mainWindow?.webContents.send('speech-started')
       })

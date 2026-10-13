@@ -113,6 +113,7 @@ export class OpenAIService extends EventEmitter {
   private conversationHistory: Message[] = []
   private maxHistoryLength = 10
   private systemPrompt: string = ''
+  private activeAbortController: AbortController | null = null
 
   constructor(config: OpenAIConfig) {
     super()
@@ -207,6 +208,16 @@ export class OpenAIService extends EventEmitter {
   }
 
   async generateAnswer(question: string, category?: QuestionGlanceCategory): Promise<string> {
+    // If a generation is currently in-flight, abort it cleanly so responses don't collide
+    if (this.activeAbortController) {
+      console.log('[OpenAIService] Aborting previous in-flight generation in favor of newer turn')
+      this.activeAbortController.abort()
+      this.activeAbortController = null
+    }
+
+    const abortController = new AbortController()
+    this.activeAbortController = abortController
+
     const attempts = this.getProviderAttempts()
     if (attempts.length === 0) {
       throw new Error('No API keys configured. Please add an API key in Settings.')
@@ -229,9 +240,13 @@ export class OpenAIService extends EventEmitter {
 
     let lastError: unknown = null
 
-    for (let i = 0; i < attempts.length; i++) {
-      const attempt = attempts[i]
-      let fullResponse = ''
+    try {
+      for (let i = 0; i < attempts.length; i++) {
+        if (abortController.signal.aborted) {
+          return ''
+        }
+        const attempt = attempts[i]
+        let fullResponse = ''
 
       try {
         if (attempt.provider === 'groq') {
@@ -280,6 +295,9 @@ export class OpenAIService extends EventEmitter {
 
           try {
             for await (const chunk of stream) {
+              if (abortController.signal.aborted) {
+                return ''
+              }
               const content = chunk.choices[0]?.delta?.content || ''
               if (content) {
                 fullResponse += content
@@ -287,6 +305,7 @@ export class OpenAIService extends EventEmitter {
               }
             }
           } catch (streamErr: any) {
+            if (abortController.signal.aborted) return ''
             if (fullResponse.trim().length > 50 && (streamErr?.message?.includes('EOF') || streamErr?.message?.includes('stream'))) {
               console.warn(`Groq stream ended with unexpected EOF, but preserved response (${fullResponse.length} chars)`)
             } else {
@@ -313,6 +332,9 @@ export class OpenAIService extends EventEmitter {
 
           try {
             for await (const chunk of stream) {
+              if (abortController.signal.aborted) {
+                return ''
+              }
               const content = chunk.choices[0]?.delta?.content || ''
               if (content) {
                 fullResponse += content
@@ -320,6 +342,7 @@ export class OpenAIService extends EventEmitter {
               }
             }
           } catch (streamErr: any) {
+            if (abortController.signal.aborted) return ''
             if (fullResponse.trim().length > 50 && (streamErr?.message?.includes('EOF') || streamErr?.message?.includes('stream'))) {
               console.warn(`OpenAI stream ended with unexpected EOF, but preserved response (${fullResponse.length} chars)`)
             } else {
@@ -370,6 +393,9 @@ export class OpenAIService extends EventEmitter {
 
           try {
             for await (const chunk of stream) {
+              if (abortController.signal.aborted) {
+                return ''
+              }
               const content = chunk.text || ''
               if (content) {
                 fullResponse += content
@@ -377,6 +403,7 @@ export class OpenAIService extends EventEmitter {
               }
             }
           } catch (streamErr: any) {
+            if (abortController.signal.aborted) return ''
             if (fullResponse.trim().length > 50 && (streamErr?.message?.includes('EOF') || streamErr?.message?.includes('stream'))) {
               console.warn(`Gemini stream ended with unexpected EOF, but preserved response (${fullResponse.length} chars)`)
             } else {
@@ -394,6 +421,7 @@ export class OpenAIService extends EventEmitter {
         this.emit('complete', fullResponse)
         return fullResponse
       } catch (err: any) {
+        if (abortController.signal.aborted) return ''
         lastError = err
         const hasNext = i + 1 < attempts.length
         if (hasNext) {
@@ -406,8 +434,14 @@ export class OpenAIService extends EventEmitter {
       }
     }
 
+    if (abortController.signal.aborted) return ''
     this.emit('error', lastError)
     throw lastError
+  } finally {
+    if (this.activeAbortController === abortController) {
+      this.activeAbortController = null
+    }
+  }
   }
 
   clearHistory(): void {
