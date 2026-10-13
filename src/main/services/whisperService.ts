@@ -168,12 +168,12 @@ export class WhisperService extends EventEmitter {
         const tempFile = path.join(os.tmpdir(), `whisper_${Date.now()}.wav`)
         fs.writeFileSync(tempFile, wavBuffer)
 
-        // WhisperFlow pattern: audio.translations listens to ANY language → outputs English
-        // whisper-large-v3 required for Groq translation (turbo doesn't support it)
-        const sttModel = isGroq ? 'whisper-large-v3' : (this.config.model || 'whisper-1')
-        console.log(`===> Sending ${(durationMs / 1000).toFixed(2)}s of audio to ${isGroq ? 'Groq' : 'OpenAI'} Whisper Translation (${sttModel})...`)
+        // Whisper auto-detects language: Hindi→Hindi, English→English (verbatim)
+        // LLM handles understanding any language and responding in English
+        const sttModel = isGroq ? 'whisper-large-v3-turbo' : (this.config.model || 'whisper-1')
+        console.log(`===> Sending ${(durationMs / 1000).toFixed(2)}s of audio to ${isGroq ? 'Groq' : 'OpenAI'} Whisper (${sttModel})...`)
 
-        const translation = await this.client.audio.translations.create({
+        const transcription = await this.client.audio.transcriptions.create({
           file: fs.createReadStream(tempFile),
           model: sttModel,
           response_format: 'json'
@@ -183,7 +183,7 @@ export class WhisperService extends EventEmitter {
           fs.unlinkSync(tempFile)
         }
 
-        text = translation.text?.trim() || ''
+        text = transcription.text?.trim() || ''
       } else {
         console.log(`===> Sending ${(durationMs / 1000).toFixed(2)}s of audio to Gemini Audio API...`)
         const ai = new GoogleGenAI({ apiKey: apiKeyTrimmed })
@@ -195,7 +195,7 @@ export class WhisperService extends EventEmitter {
             }
           },
           {
-            text: 'Listen to this audio and transcribe it into English. If the speaker is speaking in a non-English language (Hindi, Hinglish, etc.), translate it to clear English. Output only the English text. If there is only silence, background noise, or no clear speech, output nothing.'
+            text: 'Transcribe this spoken audio verbatim in the original language. If Hindi, output Hindi. If English, output English. Output only the transcribed text. If there is only silence, background noise, or no clear speech, output nothing.'
           }
         ]
 
