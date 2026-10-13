@@ -12,16 +12,27 @@ const CLAUSE_QUESTION_STARTERS = [
   /\b(can|could|would|will|shall|should|may|might|must)\s+you\b/i,
   /\b(do|does|did)\s+(you|we|they)\b/i,
   /\b(have|has)\s+(you|we|they)\b/i,
-  /\b(is|are|was|were)\s+(there|this|that|it|your)\b/i
+  /\b(is|are|was|were)\s+(there|this|that|it|your)\b/i,
+  // Hindi & Hinglish question starters
+  /(^|\s)(क्या|कैसे|क्यों|कहाँ|कहा|कब|कौन|किसका|किसकी|किसके|कितना|कितनी|कितने|किधर)(\s|$)/i,
+  /\b(kya|kaise|kyu|kyun|kahan|kaha|kab|kaun|kiska|kiski|kiske|kitna|kitni|kitne|kidhar)\b/i
 ]
 
 // Imperative question verbs common in interviews
 const CLAUSE_IMPERATIVE_STARTERS = [
-  /\b(tell me|describe|explain|walk me through|give me|share with me|elaborate on|clarify|detail)\b/i
+  /\b(tell me|describe|explain|walk me through|give me|share with me|elaborate on|clarify|detail)\b/i,
+  // Hindi & Hinglish imperatives
+  /(^|\s)(बताइए|बताओ|समझाइए|समझाओ|वर्णन कीजिए|बोलिए|बोलो)(\s|$)/i,
+  /\b(bataiye|batao|samjhaiye|samjhao|explain karo|batao zara|boliye|bolo)\b/i
 ]
 
 // Question ending patterns
-const QUESTION_ENDINGS = [/\?$/, /\b(right|correct)\s*\??\s*$/i]
+const QUESTION_ENDINGS = [
+  /\?$/,
+  /\b(right|correct)\s*\??\s*$/i,
+  /(^|\s)(है ना|सही है|है क्या)\s*\??\s*$/i,
+  /\b(hai na|sahi hai|hai kya)\s*\??\s*$/i
+]
 
 // Common interview question patterns
 const INTERVIEW_PATTERNS = [
@@ -73,7 +84,14 @@ const INTERVIEW_PATTERNS = [
   /give me an example (of|when)/i,
   /how did you (handle|manage|resolve|approach)/i,
   /what was (the outcome|the result|your role)/i,
-  /what did you learn from/i
+  /what did you learn from/i,
+
+  // Hindi & Hinglish interview patterns
+  /(अपने बारे में|तुम्हारा परिचय|आपका परिचय|इंट्रोडक्शन|इंट्रो)/i,
+  /\b(apne baare mein|apna introduction|tell me about yourself)\b/i,
+  /(आपका अनुभव|तुम्हारा अनुभव|प्रोजेक्ट के बारे में|काम किया)/i,
+  /\b(aapka experience|project ke baare mein|kaam kiya)\b/i,
+  /(ताकत|कमजोरी|चुनौती|समस्या)/i
 ]
 
 // Common topics probed during interviews
@@ -92,7 +110,10 @@ const IGNORE_PATTERNS = [
   /^(mm+|uh+|um+|ah+|oh+|hmm+)[\s.,!?]*$/i,
   /^(I see|I understand|got it|makes sense|sounds good|no problem)[\s.,!?]*$/i,
   /^(see you|have a nice day|take care|nice to meet you|pleasure meeting you)[\s.,!?]*$/i,
-  /^(let me see|let me think|let's see)[\s.,!?]*$/i
+  /^(let me see|let me think|let's see)[\s.,!?]*$/i,
+  // Hindi & Hinglish pleasantries / acknowledgments to ignore
+  /^(हाँ|हां|नहीं|अच्छा|ठीक है|नमस्ते|धन्यवाद|शुक्रिया|जी|हाँजी)[\s.,!?]*$/i,
+  /^(haan|nahi|theek hai|achha|namaste|dhanyawad|shukriya|ji|haanji)[\s.,!?]*$/i
 ]
 
 interface RecentChunk {
@@ -103,8 +124,8 @@ interface RecentChunk {
 export class QuestionDetector extends EventEmitter {
   private transcriptBuffer: string[] = []
   private recentChunks: RecentChunk[] = []
-  private minQuestionLength = 12 // Allow concise questions like "Explain your edge."
-  private minWordCount = 3 // Minimum 3 words
+  private minQuestionLength = 8 // Allow concise Hindi/English questions
+  private minWordCount = 2 // Minimum 2 words (e.g. "क्या किया?", "tell me")
   private confidenceThreshold = 0.55 // Threshold for utteranceEnd detection
   private earlyDetectionThreshold = 0.75 // Threshold for instantaneous early detection
   private lastEmittedQuestion: string = ''
@@ -213,8 +234,10 @@ export class QuestionDetector extends EventEmitter {
       return false
     }
 
-    const normCurrent = text.toLowerCase().replace(/[^a-z0-9]/g, '')
-    const normLast = this.lastEmittedQuestion.toLowerCase().replace(/[^a-z0-9]/g, '')
+    const normCurrent = text.toLowerCase().replace(/[^\p{L}\p{N}]/gu, '')
+    const normLast = this.lastEmittedQuestion.toLowerCase().replace(/[^\p{L}\p{N}]/gu, '')
+
+    if (!normCurrent || !normLast) return false
 
     if (normCurrent === normLast) return true
     if (normCurrent.includes(normLast) || normLast.includes(normCurrent)) {

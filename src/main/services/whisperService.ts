@@ -27,8 +27,8 @@ export class WhisperService extends EventEmitter {
   private lastAudioTime = 0
   private readonly SAMPLE_RATE = 16000
   private readonly BYTES_PER_SAMPLE = 2 // 16-bit audio
-  private readonly MIN_AUDIO_DURATION_MS = 400 // Minimum 400ms of audio
-  private readonly SILENCE_THRESHOLD_MS = 400 // 400ms of silence before processing (fast turnaround)
+  private readonly MIN_AUDIO_DURATION_MS = 800 // Minimum 800ms of audio (avoids micro-noise hallucinations)
+  private readonly SILENCE_THRESHOLD_MS = 600 // 600ms of silence before processing
   private readonly MAX_BUFFER_DURATION_MS = 15000 // Max 15 seconds before forced processing
 
   constructor(config: WhisperConfig) {
@@ -168,14 +168,22 @@ export class WhisperService extends EventEmitter {
         const tempFile = path.join(os.tmpdir(), `whisper_${Date.now()}.wav`)
         fs.writeFileSync(tempFile, wavBuffer)
 
-        // Whisper auto-detects language: Hindi→Hindi, English→English (verbatim)
-        // LLM handles understanding any language and responding in English
-        const sttModel = isGroq ? 'whisper-large-v3-turbo' : (this.config.model || 'whisper-1')
-        console.log(`===> Sending ${(durationMs / 1000).toFixed(2)}s of audio to ${isGroq ? 'Groq' : 'OpenAI'} Whisper (${sttModel})...`)
+        // Use whisper-large-v3 (32 layers, highest Hindi/multilingual accuracy)
+        // Set language: 'hi' so Whisper doesn't misidentify Hindi and hallucinate Chinese/Korean
+        // Hindi mode handles English words and technical terms (Hinglish) naturally
+        const sttModel = isGroq ? 'whisper-large-v3' : (this.config.model || 'whisper-1')
+        const language = this.config.language || 'hi'
+        console.log(
+          `===> Sending ${(durationMs / 1000).toFixed(2)}s of audio to ${isGroq ? 'Groq' : 'OpenAI'} Whisper (${sttModel}) [lang: ${language}]...`
+        )
 
         const transcription = await this.client.audio.transcriptions.create({
           file: fs.createReadStream(tempFile),
           model: sttModel,
+          language: language,
+          temperature: 0.0,
+          prompt:
+            'Hindi and English interview conversation, bilingual transcription in Devanagari and English. हिंदी और अंग्रेजी साक्षात्कार वार्तालाप। Hello, namaste, technical discussion.',
           response_format: 'json'
         })
 
@@ -195,7 +203,7 @@ export class WhisperService extends EventEmitter {
             }
           },
           {
-            text: 'Transcribe this spoken audio verbatim in the original language. If Hindi, output Hindi. If English, output English. Output only the transcribed text. If there is only silence, background noise, or no clear speech, output nothing.'
+            text: 'Transcribe this spoken audio verbatim in Hindi or English (Hinglish). If Hindi is spoken, write in Hindi or clear Devanagari/Hinglish. If English, write in English. Do not translate. Output ONLY the transcribed text. If there is only silence, background noise, or no clear speech, output nothing.'
           }
         ]
 
@@ -218,9 +226,9 @@ export class WhisperService extends EventEmitter {
       }
 
       if (text && text.length > 0) {
-        // Filter out common noise transcriptions
+        // Filter out common noise transcriptions and hallucinations
         if (this.isNoise(text)) {
-          console.log(`Filtered noise: "${text}"`)
+          console.log(`Filtered noise / hallucination: "${text}"`)
         } else {
           console.log(`Transcription: "${text}"`)
 
@@ -242,8 +250,30 @@ export class WhisperService extends EventEmitter {
     }
   }
 
-  // Filter out common noise/hallucination from Whisper
+  // Filter out common noise and Whisper hallucinations
   private isNoise(text: string): boolean {
+    const trimmed = text.trim()
+
+    // Filter out empty or single character artifacts
+    if (!trimmed || trimmed.length <= 1) {
+      return true
+    }
+
+    // Filter out Chinese, Japanese, Korean, Cyrillic hallucinations when speaking Hindi/English
+    // Chinese/Kanji: \u4e00-\u9fff, Japanese: \u3040-\u30ff, Korean: \uac00-\ud7af, \u1100-\u11ff, Cyrillic: \u0400-\u04ff
+    if (/[\u4e00-\u9fff\u3040-\u30ff\uac00-\ud7af\u1100-\u11ff\u0400-\u04ff]/.test(trimmed)) {
+      return true
+    }
+
+    // Filter out repetition loops (e.g. repeating characters like "加加加加加" or "aaaaa")
+    if (/(.)\1{3,}/u.test(trimmed)) {
+      return true
+    }
+    // Filter out repeated words (e.g. "word word word word")
+    if (/(\b\p{L}+\b)(?:\s+\1){3,}/iu.test(trimmed)) {
+      return true
+    }
+
     const noisePatterns = [
       /^you+\.?$/i,
       /^\.+$/,
@@ -262,14 +292,9 @@ export class WhisperService extends EventEmitter {
     ]
 
     for (const pattern of noisePatterns) {
-      if (pattern.test(text.trim())) {
+      if (pattern.test(trimmed)) {
         return true
       }
-    }
-
-    // Filter out empty or single character artifacts
-    if (!text.trim() || text.trim().length <= 1) {
-      return true
     }
 
     return false

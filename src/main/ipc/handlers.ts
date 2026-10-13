@@ -244,11 +244,12 @@ export function initializeIpcHandlers(window: BrowserWindow): void {
         const isGroq = Boolean(groqKey)
         const isOpenAI = !isGroq && Boolean(openaiKey)
         const sttName = isGroq ? 'Groq Whisper' : isOpenAI ? 'OpenAI Whisper' : 'Gemini STT'
-        console.log(`===> Using ${sttName} audio transcription (multilingual auto-detect)`)
-        sendAppLog('info', 'STT', `Initializing ${sttName} (multilingual)...`)
+        console.log(`===> Using ${sttName} audio transcription (model: whisper-large-v3, language: hi)`)
+        sendAppLog('info', 'STT', `Initializing ${sttName} (whisper-large-v3, Hindi/Hinglish)...`)
         whisperService = new WhisperService({
           apiKey: sttKey,
-          model: settings.openaiModel
+          model: isGroq ? 'whisper-large-v3' : 'whisper-1',
+          language: 'hi'
         })
         activeSttService = whisperService
       } else if (useDeepgram) {
