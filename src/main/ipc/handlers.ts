@@ -57,7 +57,9 @@ export function initializeIpcHandlers(window: BrowserWindow): void {
       updates.openaiApiKey !== undefined ||
       updates.openaiModel !== undefined ||
       updates.groqModel !== undefined ||
-      updates.geminiModel !== undefined
+      updates.geminiModel !== undefined ||
+      updates.llmProvider !== undefined ||
+      updates.resumeDescription !== undefined
     ) {
       visionService = null
       if (openaiService) {
@@ -69,7 +71,8 @@ export function initializeIpcHandlers(window: BrowserWindow): void {
           model: updates.openaiModel,
           groqModel: updates.groqModel,
           geminiModel: updates.geminiModel,
-          resumeDescription: updates.resumeDescription
+          resumeDescription: updates.resumeDescription,
+          llmProvider: updates.llmProvider
         })
       }
     }
@@ -111,9 +114,11 @@ export function initializeIpcHandlers(window: BrowserWindow): void {
       // Handle Groq API Keys (starts with gsk_)
       if (trimmedKey.startsWith('gsk_')) {
         const defaultGroqModels = [
-          { id: 'llama-3.3-70b-versatile', name: 'Llama 3.3 70B Versatile (Groq LPU - Fastest & Free)' },
-          { id: 'llama-3.1-8b-instant', name: 'Llama 3.1 8B Instant (Groq LPU - Ultra Fast)' },
-          { id: 'llama-3.2-11b-vision-preview', name: 'Llama 3.2 11B Vision (Groq LPU - Free)' }
+          { id: 'qwen/qwen3.8-27b', name: 'Qwen 3.8 27B (Groq LPU - Ultra Fast ~150ms - Recommended)' },
+          { id: 'openai/gpt-oss-20b', name: 'GPT-OSS 20B (Groq LPU - Fast)' },
+          { id: 'openai/gpt-oss-120b', name: 'GPT-OSS 120B (Groq LPU - Reasoning)' },
+          { id: 'llama-3.3-70b-versatile', name: 'Llama 3.3 70B Versatile' },
+          { id: 'llama-3.1-8b-instant', name: 'Llama 3.1 8B Instant' }
         ]
 
         try {
@@ -124,10 +129,10 @@ export function initializeIpcHandlers(window: BrowserWindow): void {
           })
           const response = await client.models.list()
           const groqModels = response.data
-            .filter((m) => m.id.includes('llama') || m.id.includes('mixtral') || m.id.includes('gemma'))
+            .filter((m) => !m.id.includes('whisper') && !m.id.includes('prompt-guard') && !m.id.includes('orpheus'))
             .map((m) => ({ id: m.id, name: `${m.id} (Groq LPU)` }))
           if (groqModels.length > 0) {
-            const priorityIds = ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'llama-3.2-11b-vision-preview']
+            const priorityIds = ['qwen/qwen3.8-27b', 'openai/gpt-oss-20b', 'openai/gpt-oss-120b', 'llama-3.3-70b-versatile', 'llama-3.1-8b-instant']
             const top = priorityIds
               .map((id) => groqModels.find((m) => m.id === id) || defaultGroqModels.find((m) => m.id === id)!)
               .filter(Boolean)
@@ -206,14 +211,19 @@ export function initializeIpcHandlers(window: BrowserWindow): void {
   ipcMain.handle('start-capture', async () => {
     const settings = settingsManager?.getSettings()
 
-    // Debug: Log API key status (not the actual keys)
-    console.log('API Keys configured:', {
-      configured: settings?.openaiApiKey ? `Yes (${settings.openaiApiKey.length} chars)` : 'No'
-    })
+    // Debug: Log active keys summary
+    const activeKeysSummary = [
+      settings?.groqApiKeys?.length ? `Groq (${settings.groqApiKeys.length})` : '',
+      settings?.geminiApiKeys?.length ? `Gemini (${settings.geminiApiKeys.length})` : '',
+      settings?.openaiApiKeys?.length ? `OpenAI (${settings.openaiApiKeys.length})` : '',
+      settings?.deepgramApiKeys?.length ? `Deepgram (${settings.deepgramApiKeys.length})` : ''
+    ].filter(Boolean).join(', ') || (settings?.openaiApiKey ? 'Legacy Key' : 'None')
 
-    if (!settings?.openaiApiKey) {
+    console.log('API Keys configured:', activeKeysSummary)
+
+    if (!settings || !settingsManager?.hasApiKeys()) {
       sendAppLog('error', 'System', 'API key not configured in Settings.')
-      throw new Error('API key not configured. Please add your Gemini or OpenAI API key in Settings.')
+      throw new Error('API key not configured. Please add your Groq, Gemini, or OpenAI API key in Settings.')
     }
 
     try {
@@ -291,7 +301,7 @@ export function initializeIpcHandlers(window: BrowserWindow): void {
         groqApiKey: settings.groqApiKey,
         geminiApiKey: settings.geminiApiKey,
         model: settings.openaiModel,
-        groqModel: settings.groqModel || 'llama-3.3-70b-versatile',
+        groqModel: settings.groqModel || 'qwen/qwen3.8-27b',
         geminiModel: settings.geminiModel || 'gemini-3.5-flash-lite',
         resumeDescription: settings.resumeDescription,
         llmProvider: settings.llmProvider || 'groq'

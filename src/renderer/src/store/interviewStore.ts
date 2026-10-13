@@ -139,7 +139,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   geminiApiKey: '',
   openaiApiKey: '',
   openaiModel: '',
-  groqModel: 'llama-3.3-70b-versatile',
+  groqModel: 'qwen/qwen3.8-27b',
   geminiModel: 'gemini-3.5-flash-lite',
   deepgramApiKey: '',
   alwaysOnTop: true,

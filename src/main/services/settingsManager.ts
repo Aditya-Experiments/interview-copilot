@@ -57,8 +57,8 @@ const DEFAULT_SETTINGS: AppSettings = {
     process.env.VITE_GEMINI_MODEL ||
     process.env.OPENAI_MODEL ||
     process.env.VITE_OPENAI_MODEL ||
-    'llama-3.3-70b-versatile',
-  groqModel: 'llama-3.3-70b-versatile',
+    'qwen/qwen3.8-27b',
+  groqModel: 'qwen/qwen3.8-27b',
   geminiModel: 'gemini-3.5-flash-lite',
   deepgramApiKey: getEnvApiKey('DEEPGRAM_API_KEY') || '',
   alwaysOnTop: true,
@@ -186,8 +186,12 @@ export class SettingsManager {
           deepgramKeys.push(savedSettings.deepgramApiKey.trim())
         }
 
-        if (savedSettings.groqModel === 'llama-3.1-8b-instant') {
-          savedSettings.groqModel = 'llama-3.3-70b-versatile'
+        if (
+          savedSettings.groqModel === 'llama-3.1-8b-instant' ||
+          savedSettings.groqModel === 'llama-3.3-70b-versatile' ||
+          !savedSettings.groqModel
+        ) {
+          savedSettings.groqModel = 'qwen/qwen3.8-27b'
         }
         if (savedSettings.geminiModel === 'gemini-2.5-flash' || savedSettings.geminiModel === 'gemini-2.5-flash-lite') {
           savedSettings.geminiModel = 'gemini-3.5-flash-lite'
@@ -254,6 +258,18 @@ export class SettingsManager {
     }
     if (updates.deepgramApiKeys) {
       newSettings.deepgramApiKey = updates.deepgramApiKeys[0] || ''
+    }
+
+    // Ensure fallback openaiApiKey alias is never wiped empty if other keys exist
+    if (!newSettings.openaiApiKey) {
+      newSettings.openaiApiKey =
+        (newSettings.openaiApiKeys && newSettings.openaiApiKeys[0]) ||
+        (newSettings.groqApiKeys && newSettings.groqApiKeys[0]) ||
+        (newSettings.geminiApiKeys && newSettings.geminiApiKeys[0]) ||
+        newSettings.groqApiKey ||
+        newSettings.geminiApiKey ||
+        updates.openaiApiKey ||
+        ''
     }
 
     this.settings = newSettings

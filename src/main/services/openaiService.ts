@@ -220,7 +220,7 @@ export class OpenAIService extends EventEmitter {
       groqAttempts.push({
         provider: 'groq',
         key,
-        model: this.config.groqModel || 'llama-3.3-70b-versatile',
+        model: this.config.groqModel || 'qwen/qwen3.8-27b',
         index: idx + 1
       })
     })
@@ -325,6 +325,9 @@ export class OpenAIService extends EventEmitter {
           // Candidate models: attempt's selected model first, followed by known available models
           const candidateModels = [
             attempt.model,
+            'qwen/qwen3.8-27b',
+            'openai/gpt-oss-20b',
+            'openai/gpt-oss-120b',
             'llama-3.3-70b-versatile',
             'llama-3.1-8b-instant'
           ].filter((m, idx, arr) => Boolean(m) && arr.indexOf(m) === idx)
