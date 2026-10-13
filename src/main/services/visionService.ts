@@ -51,23 +51,24 @@ export class VisionService {
 
       if (isGemini) {
         const ai = new GoogleGenAI({ apiKey: key })
-        const systemPrompt = `You are an expert at analyzing screenshots to detect interview questions. 
-Your task is to determine if the screenshot contains:
-1. A LeetCode coding problem (algorithm/data structure questions, programming challenges)
-2. A system design problem (architecture, scalability, distributed systems, design questions)
-3. Any other technical interview question (coding, algorithms, data structures, technical problems)
+        const systemPrompt = `You are an expert at analyzing screenshots to detect interview questions in real-time. 
+Your task is to determine if the screenshot contains ANY of the following:
+1. A coding or algorithm problem (LeetCode, HackerRank, data structures, programming challenges)
+2. A system design or architecture question
+3. A scenario, project-based question, or situational/behavioral engineering problem (e.g., "QUESTION X OF Y - PROJECT", incident response, debugging, database queries)
+4. A multiple-choice question (MCQ), quiz, or assessment test question with options
+5. Any technical, engineering, or job interview question displayed on a testing platform
 
-IMPORTANT: Be lenient in detection. If you see ANY coding problem, algorithm question, programming challenge, or technical problem, consider it an interview question.
+IMPORTANT: Be lenient in detection. If you see ANY question, prompt, coding challenge, project scenario, or test question from an interview platform, set isQuestion to true.
+Extract the FULL question text along with any options, choices, or scenario details.
 
 You MUST respond ONLY with valid JSON in this exact format:
 {
   "isQuestion": true/false,
-  "questionText": "full question text if detected, otherwise empty string",
+  "questionText": "full question text and any visible options/context if detected, otherwise empty string",
   "questionType": "leetcode" | "system-design" | "other",
   "confidence": 0.0-1.0
-}
-
-If you see any coding problem, algorithm, or technical question, set isQuestion to true and extract the question text.`
+}`
 
         const requestPayload = {
           contents: [
@@ -75,7 +76,7 @@ If you see any coding problem, algorithm, or technical question, set isQuestion 
               role: 'user',
               parts: [
                 {
-                  text: `${systemPrompt}\n\nAnalyze this screenshot carefully. Look for coding problems, algorithms, system design, or technical interview questions.`
+                  text: `${systemPrompt}\n\nAnalyze this screenshot carefully. Look for any interview question, coding problem, project scenario, or test question.`
                 },
                 {
                   inlineData: {
@@ -95,20 +96,27 @@ If you see any coding problem, algorithm, or technical question, set isQuestion 
         let response
         try {
           response = await ai.models.generateContent({
-            model: 'gemini-3.5-flash-lite',
+            model: 'gemini-2.5-flash',
             ...requestPayload
           })
         } catch {
           try {
             response = await ai.models.generateContent({
-              model: 'gemini-3.1-flash-lite',
+              model: 'gemini-2.5-flash-lite',
               ...requestPayload
             })
           } catch {
-            response = await ai.models.generateContent({
-              model: 'gemini-2.5-flash',
-              ...requestPayload
-            })
+            try {
+              response = await ai.models.generateContent({
+                model: 'gemini-3.1-flash-lite',
+                ...requestPayload
+              })
+            } catch {
+              response = await ai.models.generateContent({
+                model: 'gemini-3.5-flash-lite',
+                ...requestPayload
+              })
+            }
           }
         }
 
@@ -119,23 +127,24 @@ If you see any coding problem, algorithm, or technical question, set isQuestion 
           messages: [
             {
               role: 'system',
-              content: `You are an expert at analyzing screenshots to detect interview questions. 
-Your task is to determine if the screenshot contains:
-1. A LeetCode coding problem (algorithm/data structure questions, programming challenges)
-2. A system design problem (architecture, scalability, distributed systems, design questions)
-3. Any other technical interview question (coding, algorithms, data structures, technical problems)
+              content: `You are an expert at analyzing screenshots to detect interview questions in real-time. 
+Your task is to determine if the screenshot contains ANY of the following:
+1. A coding or algorithm problem (LeetCode, HackerRank, data structures, programming challenges)
+2. A system design or architecture question
+3. A scenario, project-based question, or situational/behavioral engineering problem (e.g., "QUESTION X OF Y - PROJECT", incident response, debugging, database queries)
+4. A multiple-choice question (MCQ), quiz, or assessment test question with options
+5. Any technical, engineering, or job interview question displayed on a testing platform
 
-IMPORTANT: Be lenient in detection. If you see ANY coding problem, algorithm question, programming challenge, or technical problem, consider it an interview question.
+IMPORTANT: Be lenient in detection. If you see ANY question, prompt, coding challenge, project scenario, or test question from an interview platform, set isQuestion to true.
+Extract the FULL question text along with any options, choices, or scenario details.
 
 You MUST respond ONLY with valid JSON in this exact format:
 {
   "isQuestion": true/false,
-  "questionText": "full question text if detected, otherwise empty string",
+  "questionText": "full question text and any visible options/context if detected, otherwise empty string",
   "questionType": "leetcode" | "system-design" | "other",
   "confidence": 0.0-1.0
-}
-
-If you see any coding problem, algorithm, or technical question, set isQuestion to true and extract the question text.`
+}`
             },
             {
               role: 'user',
@@ -144,12 +153,13 @@ If you see any coding problem, algorithm, or technical question, set isQuestion 
                   type: 'text',
                   text: `Analyze this screenshot carefully. Look for:
 - Coding problems or programming challenges
-- Algorithm questions
-- Data structure problems  
+- Algorithm and data structure questions
 - System design questions
-- Any technical interview questions
+- Scenario, project-based questions (e.g. PROJECT questions, incident response)
+- Multiple-choice questions (MCQs) and test options
+- Any interview questions
 
-If you find ANY of these, respond with JSON where isQuestion=true and include the full question text. Be thorough - extract all visible text that appears to be a question or problem statement.`
+If you find ANY of these, respond with JSON where isQuestion=true and include the full question text and options.`
                 },
                 {
                   type: 'image_url',
