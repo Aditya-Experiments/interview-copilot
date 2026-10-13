@@ -24,7 +24,7 @@ function createWindow(): void {
     autoHideMenuBar: true,
     frame: false, // Frameless for custom title bar
     transparent: false,
-    alwaysOnTop: true, // Stay on top by default
+    alwaysOnTop: false, // Set explicitly below with proper level
     skipTaskbar: false,
     resizable: true,
     icon: appIcon,
@@ -35,6 +35,21 @@ function createWindow(): void {
       nodeIntegration: false
     }
   })
+
+  // ─── PROFESSIONAL OVERLAY PANEL PATTERN ───
+  // Same approach used by Parakeet AI, Loom, Discord overlays, etc.
+  // Uses OS-level compositor layering instead of basic floating.
+  if (process.platform === 'darwin') {
+    // macOS: screen-saver level stays above EVERYTHING including fullscreen apps
+    mainWindow.setAlwaysOnTop(true, 'screen-saver')
+    // Visible on ALL macOS Spaces/Desktops, including fullscreen spaces
+    mainWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
+    // Prevent macOS from treating this as a fullscreen-capable window
+    mainWindow.setFullScreenable(false)
+  } else {
+    // Windows: screen-saver level sets HWND_TOPMOST at the highest tier
+    mainWindow.setAlwaysOnTop(true, 'screen-saver')
+  }
 
   // Enable screen share protection - hides window from screen capture
   mainWindow.setContentProtection(true)

@@ -74,9 +74,19 @@ export function initializeIpcHandlers(window: BrowserWindow): void {
       }
     }
 
-    // Apply window settings immediately
+    // Apply window settings immediately — use overlay panel pattern
     if (updates.alwaysOnTop !== undefined && mainWindow) {
-      mainWindow.setAlwaysOnTop(updates.alwaysOnTop)
+      if (updates.alwaysOnTop) {
+        mainWindow.setAlwaysOnTop(true, 'screen-saver')
+        if (process.platform === 'darwin') {
+          mainWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
+        }
+      } else {
+        mainWindow.setAlwaysOnTop(false)
+        if (process.platform === 'darwin') {
+          mainWindow.setVisibleOnAllWorkspaces(false)
+        }
+      }
     }
     if (updates.windowOpacity !== undefined && mainWindow) {
       mainWindow.setOpacity(updates.windowOpacity)
@@ -411,7 +421,19 @@ export function initializeIpcHandlers(window: BrowserWindow): void {
 
   // Window control handlers
   ipcMain.handle('set-always-on-top', (_event, value: boolean) => {
-    mainWindow?.setAlwaysOnTop(value)
+    if (mainWindow) {
+      if (value) {
+        mainWindow.setAlwaysOnTop(true, 'screen-saver')
+        if (process.platform === 'darwin') {
+          mainWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
+        }
+      } else {
+        mainWindow.setAlwaysOnTop(false)
+        if (process.platform === 'darwin') {
+          mainWindow.setVisibleOnAllWorkspaces(false)
+        }
+      }
+    }
     settingsManager?.setSetting('alwaysOnTop', value)
     return value
   })
