@@ -43,11 +43,28 @@ SyntaxHighlighter.registerLanguage('css', css)
 SyntaxHighlighter.registerLanguage('markdown', markdown)
 SyntaxHighlighter.registerLanguage('md', markdown)
 
+/**
+ * Ensures that paragraphs are separated by a double newline so markdown renders
+ * distinct paragraphs with a blank line between them, even if the source only had a single newline.
+ */
+export function ensureParagraphSeparation(content: string): string {
+  if (!content) return ''
+  const parts = content.split(/(```[\s\S]*?```)/g)
+  return parts
+    .map((part) => {
+      if (part.startsWith('```')) return part
+      return part.replace(/([^\n])\n([^\n#\-*>\d\s])/g, '$1\n\n$2')
+    })
+    .join('')
+}
+
 interface MarkdownRendererProps {
   content: string
 }
 
 export function MarkdownRenderer({ content }: MarkdownRendererProps): React.JSX.Element {
+  const formattedContent = React.useMemo(() => ensureParagraphSeparation(content), [content])
+
   return (
     <div className="markdown-content">
       <ReactMarkdown
@@ -74,7 +91,7 @@ export function MarkdownRenderer({ content }: MarkdownRendererProps): React.JSX.
           // Paragraphs
           p: ({ ...props }) => (
             <p
-              className="text-sm text-dark-100 leading-relaxed mb-2 last:mb-0 first-of-type:text-[14.5px] first-of-type:font-medium first-of-type:text-blue-100 first-of-type:leading-snug"
+              className="text-sm text-dark-100 leading-relaxed mb-4 last:mb-0 first-of-type:text-[14.5px] first-of-type:font-medium first-of-type:text-blue-100 first-of-type:leading-relaxed first-of-type:mb-4"
               {...props}
             />
           ),
@@ -161,7 +178,7 @@ export function MarkdownRenderer({ content }: MarkdownRendererProps): React.JSX.
           )
         }}
       >
-        {content}
+        {formattedContent}
       </ReactMarkdown>
     </div>
   )

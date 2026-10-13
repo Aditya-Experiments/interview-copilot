@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { ensureParagraphSeparation } from '../components/MarkdownRenderer'
 
 export interface TranscriptEntry {
   id: string
@@ -244,7 +245,7 @@ export const useInterviewStore = create<InterviewState>((set, get) => ({
           {
             id: Date.now().toString(),
             question: state.currentQuestion,
-            answer: state.currentAnswer,
+            answer: ensureParagraphSeparation(state.currentAnswer),
             timestamp: Date.now(),
             isStreaming: false,
             category: state.currentQuestionCategory
@@ -267,7 +268,7 @@ export const useInterviewStore = create<InterviewState>((set, get) => ({
       const entry: AnswerEntry = {
         id: Date.now().toString(),
         question: state.currentQuestion,
-        answer: state.currentAnswer,
+        answer: ensureParagraphSeparation(state.currentAnswer),
         timestamp: Date.now(),
         isStreaming: false,
         category: state.currentQuestionCategory

@@ -69,11 +69,14 @@ SPOKEN PARAGRAPH FORMATTING RULES (READ-OUT-LOUD VERBATIM):
    - NEVER write colon-prefixed labels like "Database: ...", "Serverless: ...", "Cache: ...", "Trade-off: ...", "Async Job Queue: ...", or "Real-Time UX: ...".
    - Nobody talks like that in an interview. All text must be natural, full sentences that flow conversationally.
 
-2. STRUCTURED IN 2–3 NATURAL SPOKEN PARAGRAPHS:
+2. STRUCTURED IN 2–3 NATURAL SPOKEN PARAGRAPHS WITH A BLANK LINE AFTER EVERY PARAGRAPH:
+   - MANDATORY EMPTY LINE: You MUST put an empty blank line (double newline \n\n) after every single paragraph. NEVER put paragraphs on consecutive lines without a blank line separating them.
    - PARAGRAPH 1 (Spoken Opener - Read Immediately in First 3s):
      1–2 punchy spoken sentences that directly state the thesis or bottom-line answer. The candidate speaks this immediately to kill awkward silence.
+
    - PARAGRAPH 2 (Technical Architecture & Implementation):
      2–3 natural spoken sentences detailing the exact technologies, data flow, and architecture. Integrate **bold technical keywords** naturally into sentences (e.g., "On the database side, I used **PostgreSQL and Prisma**..."). Use natural spoken transitions ("To handle the data load...", "For heavy PDF rendering...", "On the frontend...").
+
    - PARAGRAPH 3 (Trade-offs, Scaling & Prioritization - If applicable):
      1–2 spoken sentences articulating a conscious trade-off or scaling decision ("If I had to prioritize, I’d tackle the **database connection pool** first because read latency is the primary bottleneck...").
 
