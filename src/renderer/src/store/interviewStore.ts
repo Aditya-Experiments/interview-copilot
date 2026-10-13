@@ -16,6 +16,9 @@ export interface AnswerEntry {
 }
 
 export interface AppSettings {
+  sttProvider?: 'groq' | 'deepgram' | 'gemini' | 'openai'
+  llmProvider?: 'groq' | 'gemini' | 'openai'
+
   groqApiKeys?: string[]
   geminiApiKeys?: string[]
   openaiApiKeys?: string[]
@@ -126,6 +129,8 @@ interface InterviewState {
 }
 
 const DEFAULT_SETTINGS: AppSettings = {
+  sttProvider: 'groq',
+  llmProvider: 'groq',
   groqApiKeys: [],
   geminiApiKeys: [],
   openaiApiKeys: [],
@@ -133,9 +138,9 @@ const DEFAULT_SETTINGS: AppSettings = {
   groqApiKey: '',
   geminiApiKey: '',
   openaiApiKey: '',
-  openaiModel: 'llama-3.3-70b-versatile',
-  groqModel: 'llama-3.3-70b-versatile',
-  geminiModel: 'gemini-3.5-flash-lite',
+  openaiModel: 'llama-3.1-8b-instant',
+  groqModel: 'llama-3.1-8b-instant',
+  geminiModel: 'gemini-2.5-flash',
   deepgramApiKey: '',
   alwaysOnTop: true,
   windowOpacity: 1.0,

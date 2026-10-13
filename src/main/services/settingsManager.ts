@@ -6,7 +6,13 @@ import * as path from 'path'
 // Load environment variables from .env file
 config()
 
+export type SttProvider = 'groq' | 'deepgram' | 'gemini' | 'openai'
+export type LlmProvider = 'groq' | 'gemini' | 'openai'
+
 export interface AppSettings {
+  sttProvider?: SttProvider
+  llmProvider?: LlmProvider
+
   groqApiKeys?: string[]
   geminiApiKeys?: string[]
   openaiApiKeys?: string[]
@@ -35,6 +41,8 @@ const getEnvApiKey = (key: string): string => {
 }
 
 const DEFAULT_SETTINGS: AppSettings = {
+  sttProvider: 'groq',
+  llmProvider: 'groq',
   groqApiKeys: [],
   geminiApiKeys: [],
   openaiApiKeys: [],

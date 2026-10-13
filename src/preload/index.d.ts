@@ -19,6 +19,9 @@ export interface DetectedQuestionFromImage {
 }
 
 export interface AppSettings {
+  sttProvider?: 'groq' | 'deepgram' | 'gemini' | 'openai'
+  llmProvider?: 'groq' | 'gemini' | 'openai'
+
   groqApiKeys?: string[]
   geminiApiKeys?: string[]
   openaiApiKeys?: string[]

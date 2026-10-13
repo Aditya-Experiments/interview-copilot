@@ -9,6 +9,8 @@ export interface Message {
 
 export interface OpenAIConfig {
   apiKey?: string
+  groqApiKey?: string
+  geminiApiKey?: string
   groqApiKeys?: string[]
   geminiApiKeys?: string[]
   openaiApiKeys?: string[]
@@ -18,6 +20,7 @@ export interface OpenAIConfig {
   maxTokens?: number
   temperature?: number
   resumeDescription?: string
+  llmProvider?: 'groq' | 'gemini' | 'openai'
 }
 
 const getSystemPrompt = (resumeDescription: string): string => {
@@ -179,6 +182,13 @@ Format with clear headings, but write naturally. Sound like a real candidate exp
   }
 }
 
+interface ProviderAttempt {
+  provider: 'groq' | 'gemini' | 'openai'
+  key: string
+  model: string
+  index: number
+}
+
 export class OpenAIService extends EventEmitter {
   private config: OpenAIConfig
   private conversationHistory: Message[] = []
@@ -191,20 +201,12 @@ export class OpenAIService extends EventEmitter {
     this.systemPrompt = getSystemPrompt(config.resumeDescription || '')
   }
 
-  private getProviderAttempts(): Array<{
-    provider: 'groq' | 'gemini' | 'openai'
-    key: string
-    model: string
-    index: number
-  }> {
-    const attempts: Array<{
-      provider: 'groq' | 'gemini' | 'openai'
-      key: string
-      model: string
-      index: number
-    }> = []
+  private getProviderAttempts(): ProviderAttempt[] {
+    const groqAttempts: ProviderAttempt[] = []
+    const geminiAttempts: ProviderAttempt[] = []
+    const openaiAttempts: ProviderAttempt[] = []
 
-    // 1. Groq Keys (Priority 1: Ultra-fast ~150ms answers)
+    // 1. Groq Keys (Ultra-fast ~150ms answers)
     const groqKeys: string[] = []
     if (this.config.groqApiKeys && Array.isArray(this.config.groqApiKeys)) {
       for (const k of this.config.groqApiKeys) {
@@ -215,15 +217,15 @@ export class OpenAIService extends EventEmitter {
       groqKeys.push(this.config.apiKey.trim())
     }
     groqKeys.forEach((key, idx) => {
-      attempts.push({
+      groqAttempts.push({
         provider: 'groq',
         key,
-        model: this.config.groqModel || this.config.model || 'llama-3.3-70b-versatile',
+        model: this.config.groqModel || 'llama-3.1-8b-instant',
         index: idx + 1
       })
     })
 
-    // 2. Gemini Keys (Priority 2: 100% Free Multimodal)
+    // 2. Gemini Keys (100% Free Multimodal)
     const geminiKeys: string[] = []
     if (this.config.geminiApiKeys && Array.isArray(this.config.geminiApiKeys)) {
       for (const k of this.config.geminiApiKeys) {
@@ -239,11 +241,11 @@ export class OpenAIService extends EventEmitter {
       geminiKeys.push(this.config.apiKey.trim())
     }
     geminiKeys.forEach((key, idx) => {
-      let gModel = this.config.geminiModel || this.config.model || 'gemini-3.5-flash-lite'
+      let gModel = this.config.geminiModel || 'gemini-2.5-flash'
       if (gModel.includes('llama') || gModel.includes('gpt')) {
         gModel = 'gemini-3.5-flash-lite'
       }
-      attempts.push({
+      geminiAttempts.push({
         provider: 'gemini',
         key,
         model: gModel,
@@ -251,7 +253,7 @@ export class OpenAIService extends EventEmitter {
       })
     })
 
-    // 3. OpenAI Keys (Priority 3: ChatGPT)
+    // 3. OpenAI Keys (ChatGPT)
     const openaiKeys: string[] = []
     if (this.config.openaiApiKeys && Array.isArray(this.config.openaiApiKeys)) {
       for (const k of this.config.openaiApiKeys) {
@@ -266,7 +268,7 @@ export class OpenAIService extends EventEmitter {
       if (!oModel.includes('gpt')) {
         oModel = 'gpt-4o-mini'
       }
-      attempts.push({
+      openaiAttempts.push({
         provider: 'openai',
         key,
         model: oModel,
@@ -274,7 +276,15 @@ export class OpenAIService extends EventEmitter {
       })
     })
 
-    return attempts
+    // Order by user preference (default: groq first for maximum speed)
+    const preferred = this.config.llmProvider || 'groq'
+    if (preferred === 'gemini') {
+      return [...geminiAttempts, ...groqAttempts, ...openaiAttempts]
+    } else if (preferred === 'openai') {
+      return [...openaiAttempts, ...groqAttempts, ...geminiAttempts]
+    } else {
+      return [...groqAttempts, ...geminiAttempts, ...openaiAttempts]
+    }
   }
 
   async generateAnswer(question: string): Promise<string> {
