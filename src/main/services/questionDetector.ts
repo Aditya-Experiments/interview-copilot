@@ -140,16 +140,47 @@ export class QuestionDetector extends EventEmitter {
       const trimmed = text.trim()
       this.transcriptBuffer.push(trimmed)
       this.recentChunks.push({ text: trimmed, timestamp: Date.now() })
-      // Keep recent chunks within the last 20 seconds (up to 6 chunks)
-      const cutoff = Date.now() - 20000
-      this.recentChunks = this.recentChunks.filter((c) => c.timestamp >= cutoff).slice(-6)
+      // Keep recent chunks within the last 60 seconds (up to 25 chunks)
+      const cutoff = Date.now() - 60000
+      this.recentChunks = this.recentChunks.filter((c) => c.timestamp >= cutoff).slice(-25)
     }
+  }
+
+  /**
+   * Reconstructs the complete question by joining all chunks spoken since the last question was answered.
+   * This guarantees that even if the interviewer paused to breathe or spoke a long scenario over 10-30 seconds,
+   * no part of the premise is ever dropped.
+   */
+  private getFullQuestionText(triggerText: string): string {
+    const chunks: string[] = []
+    for (const c of this.recentChunks) {
+      if (c.timestamp > this.lastEmittedTime && Date.now() - c.timestamp < 45000) {
+        if (chunks.length === 0 || chunks[chunks.length - 1] !== c.text) {
+          chunks.push(c.text)
+        }
+      }
+    }
+
+    for (const bufText of this.transcriptBuffer) {
+      if (!chunks.includes(bufText)) {
+        chunks.push(bufText)
+      }
+    }
+
+    let fullText = chunks.join(' ').trim()
+    if (!fullText) {
+      fullText = triggerText
+    } else if (!fullText.includes(triggerText)) {
+      fullText = `${fullText} ${triggerText}`.trim()
+    }
+
+    return fullText
   }
 
   /**
    * Check for question immediately (early detection) for high-confidence questions.
    * If a question clause is detected, automatically incorporates all preceding premise / scenario chunks
-   * from the current utterance buffer or recent speech so large scenario questions are never cut off.
+   * from the current turn so large scenario questions are never cut off.
    */
   checkEarlyDetection(text: string): DetectedQuestion | null {
     const trimmedText = text.trim()
@@ -181,30 +212,7 @@ export class QuestionDetector extends EventEmitter {
     }
 
     if (detection && detection.confidence >= this.earlyDetectionThreshold) {
-      // BUILD COMPLETE QUESTION WITH FULL SCENARIO / PREMISE CONTEXT
-      let fullQuestionText = candidateText
-
-      // 1. If transcriptBuffer has multiple chunks from this utterance burst, join all of them!
-      if (this.transcriptBuffer.length > 1) {
-        fullQuestionText = this.transcriptBuffer.join(' ').trim()
-      } else {
-        // 2. If buffer only had 1 chunk, check if there was unemitted premise/setup context
-        // spoken within the last 15 seconds (after the last emitted question)
-        const recentSetup = this.recentChunks
-          .filter(
-            (c) =>
-              c.timestamp > this.lastEmittedTime &&
-              !candidateText.includes(c.text) &&
-              Date.now() - c.timestamp < 15000
-          )
-          .map((c) => c.text)
-          .join(' ')
-          .trim()
-
-        if (recentSetup) {
-          fullQuestionText = `${recentSetup} ${candidateText}`.trim()
-        }
-      }
+      const fullQuestionText = this.getFullQuestionText(candidateText)
 
       if (this.isDuplicateOrRecent(fullQuestionText)) {
         return null
@@ -224,28 +232,11 @@ export class QuestionDetector extends EventEmitter {
   }
 
   onUtteranceEnd(): void {
-    const fullText = this.transcriptBuffer.join(' ').trim()
+    const bufferText = this.transcriptBuffer.join(' ').trim()
     this.transcriptBuffer = []
 
-    if (!fullText) return
-
-    let candidateText = fullText
-
-    // Check if there was unemitted recent premise context before this utterance in the last 15s
-    const recentSetup = this.recentChunks
-      .filter(
-        (c) =>
-          c.timestamp > this.lastEmittedTime &&
-          !fullText.includes(c.text) &&
-          Date.now() - c.timestamp < 15000
-      )
-      .map((c) => c.text)
-      .join(' ')
-      .trim()
-
-    if (recentSetup) {
-      candidateText = `${recentSetup} ${fullText}`.trim()
-    }
+    const candidateText = this.getFullQuestionText(bufferText)
+    if (!candidateText) return
 
     let detection = this.evaluateCandidate(candidateText)
 
