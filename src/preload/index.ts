@@ -14,6 +14,7 @@ export interface DetectedQuestion {
   questionType: 'direct' | 'indirect' | 'rhetorical' | 'unknown'
   category?: 'architecture_project' | 'behavioral' | 'coding' | 'conceptual' | 'unknown'
   boundContext?: string
+  isContinuation?: boolean
 }
 
 export interface DetectedQuestionFromImage {

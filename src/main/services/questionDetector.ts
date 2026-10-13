@@ -8,15 +8,17 @@ export interface DetectedQuestion {
   questionType: 'direct' | 'indirect' | 'rhetorical' | 'unknown'
   category?: InterviewQuestionCategory
   boundContext?: string
+  previousTurn?: string
 }
 
 /**
  * QuestionDetector (Parakeet AI Turn Manager)
  * 
- * Replaces hardcoded regex scoring with a robust turn-based accumulator.
- * As the interviewer speaks, finalized clauses are gathered in strict chronological order.
- * When the speaker pauses (End-of-Utterance), the complete accumulated turn is emitted
- * directly to the LLM for semantic intent analysis and Glance Mode generation.
+ * Gathers finalized clauses from the interviewer as they speak.
+ * When the interviewer pauses or finishes speaking (End-of-Utterance), the complete acoustic
+ * turn is emitted directly to the LLM.
+ * Zero hardcoded regex lists: the fast LLM semantically understands question continuation,
+ * synthesis, and topic transitions natively.
  */
 export class QuestionDetector extends EventEmitter {
   private turnChunks: string[] = []
@@ -30,7 +32,7 @@ export class QuestionDetector extends EventEmitter {
   }
 
   /**
-   * Called when candidate speaks into mic (Dual-Channel speaker separation).
+   * Called when candidate speaks into mic (kept for compatibility).
    */
   setCandidateSpeaking(speaking: boolean): void {
     this.isCandidateSpeaking = speaking
@@ -40,40 +42,25 @@ export class QuestionDetector extends EventEmitter {
     return this.isCandidateSpeaking
   }
 
-  /**
-   * Resets the turn boundary when the candidate finishes answering.
-   * If the interviewer spoke recently (within last 12s), preserves speech.
-   */
   turnBoundaryReset(): void {
     const now = Date.now()
-    // Safety guard: do not wipe if interviewer was just speaking in the last 12 seconds
     if (this.turnChunks.length > 0 && now - this.turnStartTime < 12000 && this.lastEmittedTime === 0) {
-      console.log('[QuestionDetector] 🛡️ Preserving recent interviewer speech despite turn reset request')
       return
     }
 
-    console.log('[QuestionDetector] ──> Turn boundary reset: T=0')
     this.turnChunks = []
     this.turnStartTime = now
   }
 
-  /**
-   * Clears accumulated turn buffers.
-   */
   clearBuffer(): void {
     this.turnChunks = []
     this.turnStartTime = Date.now()
   }
 
-  /**
-   * Called on every STT transcript event.
-   * Finalized clauses are appended chronologically to the current turn buffer.
-   */
   addTranscript(text: string, isFinal: boolean): void {
     if (!isFinal || !text.trim()) return
 
     const trimmed = text.trim()
-    // Deduplicate identical consecutive chunks
     if (this.turnChunks.length === 0 || this.turnChunks[this.turnChunks.length - 1] !== trimmed) {
       this.turnChunks.push(trimmed)
     }
@@ -81,7 +68,7 @@ export class QuestionDetector extends EventEmitter {
 
   /**
    * Called on End-of-Utterance (EoU): when the interviewer finishes speaking or pauses.
-   * Reconstructs the complete question across breathing pauses and emits for LLM generation.
+   * Emits the complete interviewer speech turn with previous conversational turn context.
    */
   onUtteranceEnd(): void {
     if (this.turnChunks.length === 0) return
@@ -90,32 +77,36 @@ export class QuestionDetector extends EventEmitter {
     if (!fullTurnText) return
 
     const words = fullTurnText.split(/\s+/).filter(Boolean)
-    // Ignore trivial background noise or 1-word filler (e.g. "ok", "yeah")
+    // Ignore trivial 1-word filler (e.g. "ok", "yeah")
     if (words.length < 2) {
       this.turnChunks = []
       return
     }
 
-    // Deduplication check: prevent re-firing identical questions within 8s
-    if (this.isDuplicateOrRecent(fullTurnText)) {
-      console.log(`[QuestionDetector] Skipping duplicate/recent turn: "${fullTurnText}"`)
+    // Exact duplicate echo check within 4 seconds (prevent STT duplicate loopback)
+    if (this.isExactDuplicate(fullTurnText)) {
+      console.log(`[QuestionDetector] Skipping exact duplicate turn: "${fullTurnText}"`)
       this.turnChunks = []
       return
     }
+
+    // Pass previous turn within conversational window (25s) for AI semantic synthesis
+    const elapsedMs = Date.now() - this.lastEmittedTime
+    const previousTurn = elapsedMs <= 25000 ? this.lastEmittedQuestion : ''
 
     console.log(
       `[QuestionDetector] ✓ COMPLETE TURN CAPTURED: "${fullTurnText}" (${words.length} words)`
     )
 
     this.markEmitted(fullTurnText)
-    // Clear turn chunks so subsequent interviewer speech starts clean
     this.turnChunks = []
     this.turnStartTime = Date.now()
 
     this.emit('questionDetected', {
       text: fullTurnText,
       confidence: 1.0,
-      questionType: 'direct'
+      questionType: 'direct',
+      previousTurn: previousTurn
     })
   }
 
@@ -123,29 +114,20 @@ export class QuestionDetector extends EventEmitter {
    * Standalone check for compatibility if called explicitly.
    */
   checkEarlyDetection(_text: string): DetectedQuestion | null {
-    // Intentionally disabled in Parakeet AI:
-    // We do NOT fire mid-sentence on partial clauses. We wait for End-of-Utterance.
     return null
   }
 
-  private isDuplicateOrRecent(text: string): boolean {
+  private isExactDuplicate(text: string): boolean {
     if (!this.lastEmittedQuestion) return false
     const now = Date.now()
-    if (now - this.lastEmittedTime > 8000) {
+    if (now - this.lastEmittedTime > 4000) {
       return false
     }
 
     const normCurrent = text.toLowerCase().replace(/[^\p{L}\p{N}]/gu, '')
     const normLast = this.lastEmittedQuestion.toLowerCase().replace(/[^\p{L}\p{N}]/gu, '')
 
-    if (!normCurrent || !normLast) return false
-
-    if (normCurrent === normLast) return true
-    if (normCurrent.includes(normLast) || normLast.includes(normCurrent)) {
-      return true
-    }
-
-    return false
+    return Boolean(normCurrent && normLast && normCurrent === normLast)
   }
 
   private markEmitted(text: string): void {

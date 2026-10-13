@@ -40,15 +40,26 @@ Ground technical choices in this background. Speak in the first person ("I built
     : ''
 }
 
-INTENT & CATEGORY RULE (CRITICAL):
-1. If the interviewer's turn is purely conversational filler, acknowledgment, small talk, pleasantry, or positive feedback without asking a question or technical scenario (e.g., "Sounds good", "Okay great", "Thanks", "I see", "Yeah right", "Let's move on", "Understood"), you MUST reply with STRICTLY and ONLY:
+TURN & TOPIC SEMANTIC UNDERSTANDING (CRITICAL - LINE 1):
+1. Pure Acknowledgment / Filler:
+   If the interviewer's turn is purely conversational filler, acknowledgment, small talk, pleasantry, or positive feedback without asking a question or technical scenario (e.g., "Sounds good", "Okay great", "Thanks", "I see", "Yeah right", "Let's move on", "Understood"), you MUST reply with STRICTLY and ONLY:
 [NO_QUESTION]
 
-2. If it contains an interview question, technical scenario, or problem to address, output the category tag on line 1:
-[CATEGORY:architecture_project]  <- For project architecture, system design, databases, scaling, trade-offs
-[CATEGORY:behavioral]            <- For behavioral, HR, conflict, leadership (STAR format)
-[CATEGORY:coding]                <- For DSA, LeetCode, write code, algorithms, Big-O
-[CATEGORY:conceptual]            <- For conceptual, technical verbal questions, differences, definitions
+2. Semantic Routing & Question Synthesis:
+   If it contains an interview question, technical scenario, or problem, output line 1 in this exact format:
+[QUESTION: <full synthesized question>] [TOPIC:NEW|CONTINUATION] [CATEGORY:architecture_project|behavioral|coding|conceptual]
+
+- QUESTION SYNTHESIS:
+  - If the interviewer's turn completes, continues, or expands an incomplete thought or earlier question across a pause, synthesize the FULL, COHESIVE question inside [QUESTION: <complete question>].
+  - Otherwise, output the interviewer's clean question inside [QUESTION: <clean question>].
+- TOPIC ROUTING:
+  - Output [TOPIC:CONTINUATION] if this question continues, follows up on, or is within the SAME topic/project previously discussed.
+  - Output [TOPIC:NEW] if the interviewer is switching to a completely NEW topic (e.g. from system design to LeetCode coding, or to behavioral STAR, or starting an unrelated domain).
+- CATEGORY TAG:
+  [CATEGORY:architecture_project]  <- For project architecture, system design, databases, scaling, trade-offs
+  [CATEGORY:behavioral]            <- For behavioral, HR, conflict, leadership (STAR format)
+  [CATEGORY:coding]                <- For DSA, LeetCode, write code, algorithms, Big-O
+  [CATEGORY:conceptual]            <- For conceptual, technical verbal questions, differences, definitions
 Followed immediately on line 2 by your crisp Glance Mode answer formatted according to that category.
 
 LANGUAGE: Regardless of the interviewer's language (English, Hindi, Hinglish), ALWAYS answer in crisp, professional English.
@@ -106,6 +117,7 @@ export class OpenAIService extends EventEmitter {
   private maxHistoryLength = 10
   private systemPrompt: string = ''
   private activeAbortController: AbortController | null = null
+  private lastTopicCategory: QuestionGlanceCategory | null = null
 
   constructor(config: OpenAIConfig) {
     super()
@@ -272,17 +284,34 @@ export class OpenAIService extends EventEmitter {
           continue
         }
 
-        // If buffer might be starting with [CATEGORY: wait until ']' arrives
+        // If buffer might be starting with [QUESTION: or [TOPIC: or [CATEGORY:, wait until line 1 is complete or buffer is long enough
         if (
-          (normalized.startsWith('[CATEGORY') || normalized.startsWith('CATEGORY:')) &&
-          !buffer.includes(']') &&
-          buffer.length < 50
+          (normalized.startsWith('[') ||
+            normalized.startsWith('QUESTION:') ||
+            normalized.startsWith('TOPIC:') ||
+            normalized.startsWith('CATEGORY:')) &&
+          !buffer.includes('\n') &&
+          buffer.length < 160
         ) {
           continue
         }
 
         // Confirmed real question response!
         isConfirmed = true
+
+        let synthesizedQuestion = questionContext.question
+        const qMatch = buffer.match(/\[QUESTION:\s*([^\]]+)\]\s*/i)
+        if (qMatch) {
+          synthesizedQuestion = qMatch[1].trim()
+          buffer = buffer.replace(qMatch[0], '')
+        }
+
+        let isNewTopic = false
+        const topicMatch = buffer.match(/\[TOPIC:\s*(NEW|CONTINUATION)\]\s*/i)
+        if (topicMatch) {
+          isNewTopic = topicMatch[1].toUpperCase() === 'NEW'
+          buffer = buffer.replace(topicMatch[0], '')
+        }
 
         let detectedCategory = questionContext.category
         const catMatch = buffer.match(/\[CATEGORY:\s*([a-zA-Z0-9_]+)\]\s*\n?/i)
@@ -299,10 +328,36 @@ export class OpenAIService extends EventEmitter {
           buffer = buffer.replace(catMatch[0], '')
         }
 
+        // Category shift between distinct domains also confirms a new topic transition
+        if (
+          this.lastTopicCategory &&
+          detectedCategory &&
+          this.lastTopicCategory !== detectedCategory
+        ) {
+          isNewTopic = true
+        }
+
+        if (isNewTopic) {
+          console.log(
+            `[OpenAIService] 🔄 Next topic detected [${detectedCategory || 'new'}] ──> Deleting old topic context history`
+          )
+          this.clearHistory()
+          this.conversationHistory.push({
+            role: 'user',
+            content: `Interview question: "${synthesizedQuestion}"\n\nProvide a professional answer:`
+          })
+        }
+
+        this.lastTopicCategory = detectedCategory || null
+
         this.emit('questionConfirmed', {
-          question: questionContext.question,
-          category: detectedCategory || 'conceptual'
+          question: synthesizedQuestion,
+          category: detectedCategory || 'conceptual',
+          isContinuation: !isNewTopic
         })
+
+        // Clean leading newlines/whitespace from answer
+        buffer = buffer.replace(/^[\s\r\n]+/, '')
 
         if (buffer) {
           fullResponse += buffer
@@ -333,6 +388,20 @@ export class OpenAIService extends EventEmitter {
       ) {
         isSuppressed = true
       } else {
+        let synthesizedQuestion = questionContext.question
+        const qMatch = buffer.match(/\[QUESTION:\s*([^\]]+)\]\s*/i)
+        if (qMatch) {
+          synthesizedQuestion = qMatch[1].trim()
+          buffer = buffer.replace(qMatch[0], '')
+        }
+
+        let isNewTopic = false
+        const topicMatch = buffer.match(/\[TOPIC:\s*(NEW|CONTINUATION)\]\s*/i)
+        if (topicMatch) {
+          isNewTopic = topicMatch[1].toUpperCase() === 'NEW'
+          buffer = buffer.replace(topicMatch[0], '')
+        }
+
         let detectedCategory = questionContext.category
         const catMatch = buffer.match(/\[CATEGORY:\s*([a-zA-Z0-9_]+)\]\s*\n?/i)
         if (catMatch) {
@@ -347,10 +416,35 @@ export class OpenAIService extends EventEmitter {
           }
           buffer = buffer.replace(catMatch[0], '')
         }
+
+        if (
+          this.lastTopicCategory &&
+          detectedCategory &&
+          this.lastTopicCategory !== detectedCategory
+        ) {
+          isNewTopic = true
+        }
+
+        if (isNewTopic) {
+          console.log(
+            `[OpenAIService] 🔄 Next topic detected [${detectedCategory || 'new'}] ──> Deleting old topic context history`
+          )
+          this.clearHistory()
+          this.conversationHistory.push({
+            role: 'user',
+            content: `Interview question: "${synthesizedQuestion}"\n\nProvide a professional answer:`
+          })
+        }
+
+        this.lastTopicCategory = detectedCategory || null
+
         this.emit('questionConfirmed', {
-          question: questionContext.question,
-          category: detectedCategory || 'conceptual'
+          question: synthesizedQuestion,
+          category: detectedCategory || 'conceptual',
+          isContinuation: !isNewTopic
         })
+
+        buffer = buffer.replace(/^[\s\r\n]+/, '')
         if (buffer) {
           fullResponse += buffer
           this.emit('stream', buffer)
@@ -361,7 +455,11 @@ export class OpenAIService extends EventEmitter {
     return { fullResponse, isSuppressed, wasAborted: abortSignal.aborted }
   }
 
-  async generateAnswer(question: string, category?: QuestionGlanceCategory): Promise<string> {
+  async generateAnswer(
+    question: string,
+    category?: QuestionGlanceCategory,
+    options?: { previousTurn?: string }
+  ): Promise<string> {
     const attempts = this.getProviderAttempts()
     if (attempts.length === 0) {
       throw new Error('No API keys configured. Please add an API key in Settings.')
@@ -374,10 +472,14 @@ export class OpenAIService extends EventEmitter {
 
     const activeSystemPrompt = this.systemPrompt
 
-    // Add the question to history
+    // Add user turn to conversation history with previous turn context if present
+    const userPromptContent = options?.previousTurn
+      ? `Interviewer previous speech turn: "${options.previousTurn}"\nInterviewer current speech turn: "${question}"\n\nAnalyze intent, synthesize full question if continuation, and provide Glance Mode answer:`
+      : `Interviewer speech turn: "${question}"\n\nAnalyze intent, synthesize full question if continuation, and provide Glance Mode answer:`
+
     this.conversationHistory.push({
       role: 'user',
-      content: `Interview question: "${question}"\n\nProvide a professional answer:`
+      content: userPromptContent
     })
 
     // Trim history if too long

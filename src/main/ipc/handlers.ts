@@ -309,13 +309,14 @@ export function initializeIpcHandlers(window: BrowserWindow): void {
       })
 
       // Set up OpenAI event listeners ONCE
-      openaiService.on('questionConfirmed', (ctx: { question: string; category?: string }) => {
+      openaiService.on('questionConfirmed', (ctx: { question: string; category?: string; isContinuation?: boolean }) => {
         console.log(`[Handlers] ⚡ LLM confirmed question intent [${ctx.category || 'Glance'}]: "${ctx.question.slice(0, 50)}..."`)
         mainWindow?.webContents.send('question-detected', {
           text: ctx.question,
           category: ctx.category || 'conceptual',
           confidence: 1.0,
-          questionType: 'direct'
+          questionType: 'direct',
+          isContinuation: ctx.isContinuation
         })
       })
 
@@ -399,7 +400,9 @@ export function initializeIpcHandlers(window: BrowserWindow): void {
               'AI',
               `Analyzing intent & generating answer for: "${detection.text.slice(0, 50)}..."`
             )
-            await openaiService.generateAnswer(detection.text)
+            await openaiService.generateAnswer(detection.text, detection.category, {
+              previousTurn: detection.previousTurn
+            })
           } catch (error) {
             const errMsg = (error as Error).message
             if (!errMsg.includes('aborted') && !errMsg.includes('AbortError')) {

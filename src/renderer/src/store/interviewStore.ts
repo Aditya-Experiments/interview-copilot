@@ -106,7 +106,8 @@ interface InterviewState {
   updateCurrentAnswer: (chunk: string) => void
   setCurrentQuestion: (
     question: string,
-    category?: 'architecture_project' | 'behavioral' | 'coding' | 'conceptual' | 'unknown'
+    category?: 'architecture_project' | 'behavioral' | 'coding' | 'conceptual' | 'unknown',
+    isContinuation?: boolean
   ) => void
   finalizeAnswer: () => void | Promise<void>
   clearAnswers: () => void
@@ -227,8 +228,38 @@ export const useInterviewStore = create<InterviewState>((set, get) => ({
       isGenerating: true
     })),
 
-  setCurrentQuestion: (question, category) =>
-    set({ currentQuestion: question, currentQuestionCategory: category }),
+  setCurrentQuestion: (question, category, isContinuation) =>
+    set((state) => {
+      let nextAnswers = state.answers
+
+      // If there was an existing answer from a previous distinct question, archive it to answers list now
+      if (
+        state.currentAnswer &&
+        state.currentQuestion &&
+        state.currentQuestion !== question &&
+        !isContinuation
+      ) {
+        nextAnswers = [
+          ...state.answers,
+          {
+            id: Date.now().toString(),
+            question: state.currentQuestion,
+            answer: state.currentAnswer,
+            timestamp: Date.now(),
+            isStreaming: false,
+            category: state.currentQuestionCategory
+          }
+        ]
+      }
+
+      return {
+        answers: nextAnswers,
+        currentQuestion: question,
+        currentQuestionCategory: category || state.currentQuestionCategory,
+        currentAnswer: '',
+        isGenerating: true
+      }
+    }),
 
   finalizeAnswer: async () => {
     const state = get()
@@ -242,7 +273,7 @@ export const useInterviewStore = create<InterviewState>((set, get) => ({
         category: state.currentQuestionCategory
       }
       set((state) => ({
-        answers: [...state.answers.slice(-20), entry], // Keep last 20 answers
+        answers: [...state.answers, entry], // Preserve ALL answers throughout entire interview without deleting any!
         currentAnswer: '',
         currentQuestion: '',
         currentQuestionCategory: undefined,

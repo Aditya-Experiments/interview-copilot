@@ -75,7 +75,7 @@ export function useInterviewEvents(): void {
     })
 
     const unsubQuestionDetected = window.api.onQuestionDetected((question) => {
-      setCurrentQuestion(question.text, question.category)
+      setCurrentQuestion(question.text, question.category, question.isContinuation)
     })
 
     const unsubAnswerStream = window.api.onAnswerStream((chunk) => {
