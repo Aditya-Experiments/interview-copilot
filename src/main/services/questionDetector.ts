@@ -26,6 +26,8 @@ export class QuestionDetector extends EventEmitter {
   private isCandidateSpeaking: boolean = false
   private lastEmittedQuestion: string = ''
   private lastEmittedTime: number = 0
+  private lastTranscriptTime: number = 0
+  private pendingLiveText: string = ''
 
   constructor() {
     super()
@@ -42,6 +44,10 @@ export class QuestionDetector extends EventEmitter {
     return this.isCandidateSpeaking
   }
 
+  getLastTranscriptTime(): number {
+    return this.lastTranscriptTime
+  }
+
   turnBoundaryReset(): void {
     const now = Date.now()
     if (this.turnChunks.length > 0 && now - this.turnStartTime < 12000 && this.lastEmittedTime === 0) {
@@ -49,20 +55,29 @@ export class QuestionDetector extends EventEmitter {
     }
 
     this.turnChunks = []
+    this.pendingLiveText = ''
     this.turnStartTime = now
   }
 
   clearBuffer(): void {
     this.turnChunks = []
+    this.pendingLiveText = ''
     this.turnStartTime = Date.now()
   }
 
   addTranscript(text: string, isFinal: boolean): void {
-    if (!isFinal || !text.trim()) return
+    if (!text || !text.trim()) return
 
+    this.lastTranscriptTime = Date.now()
     const trimmed = text.trim()
-    if (this.turnChunks.length === 0 || this.turnChunks[this.turnChunks.length - 1] !== trimmed) {
-      this.turnChunks.push(trimmed)
+
+    if (isFinal) {
+      this.pendingLiveText = ''
+      if (this.turnChunks.length === 0 || this.turnChunks[this.turnChunks.length - 1] !== trimmed) {
+        this.turnChunks.push(trimmed)
+      }
+    } else {
+      this.pendingLiveText = trimmed
     }
   }
 
@@ -71,15 +86,25 @@ export class QuestionDetector extends EventEmitter {
    * Emits the complete interviewer speech turn with previous conversational turn context.
    */
   onUtteranceEnd(): void {
+    // If pendingLiveText has content that wasn't finalized yet, append it so nothing is lost
+    if (
+      this.pendingLiveText &&
+      (!this.turnChunks.length || this.turnChunks[this.turnChunks.length - 1] !== this.pendingLiveText)
+    ) {
+      this.turnChunks.push(this.pendingLiveText)
+      this.pendingLiveText = ''
+    }
+
     if (this.turnChunks.length === 0) return
 
-    const fullTurnText = this.turnChunks.join(' ').trim()
+    const fullTurnText = this.turnChunks.join(' ').replace(/\s+/g, ' ').trim()
     if (!fullTurnText) return
 
     const words = fullTurnText.split(/\s+/).filter(Boolean)
     // Ignore trivial 1-word filler (e.g. "ok", "yeah")
     if (words.length < 2) {
       this.turnChunks = []
+      this.pendingLiveText = ''
       return
     }
 
@@ -87,6 +112,7 @@ export class QuestionDetector extends EventEmitter {
     if (this.isExactDuplicate(fullTurnText)) {
       console.log(`[QuestionDetector] Skipping exact duplicate turn: "${fullTurnText}"`)
       this.turnChunks = []
+      this.pendingLiveText = ''
       return
     }
 
@@ -100,6 +126,7 @@ export class QuestionDetector extends EventEmitter {
 
     this.markEmitted(fullTurnText)
     this.turnChunks = []
+    this.pendingLiveText = ''
     this.turnStartTime = Date.now()
 
     this.emit('questionDetected', {

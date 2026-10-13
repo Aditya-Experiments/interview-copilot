@@ -339,28 +339,35 @@ export function initializeIpcHandlers(window: BrowserWindow): void {
         questionDetector?.addTranscript(event.text, event.isFinal)
         mainWindow?.webContents.send('transcript', event)
 
-        // End-of-Utterance Fallback:
-        // If STT provider does not fire utteranceEnd, trigger turn completion
-        // after 1000ms pause following a finalized clause.
-        if (event.isFinal) {
-          if (utteranceDebounceTimer) {
-            clearTimeout(utteranceDebounceTimer)
-          }
-          utteranceDebounceTimer = setTimeout(() => {
-            console.log('[Handlers] ⏱️ Utterance pause detected (1000ms debounce) ──> Turn complete')
-            questionDetector?.onUtteranceEnd()
-          }, 1000)
+        // Reset the silence debounce timer on EVERY transcript (live or final).
+        // As long as words are flowing, the interviewer is actively speaking!
+        if (utteranceDebounceTimer) {
+          clearTimeout(utteranceDebounceTimer)
         }
+        utteranceDebounceTimer = setTimeout(() => {
+          console.log('[Handlers] ⏱️ True speech pause detected (1400ms silence) ──> Turn complete')
+          sendAppLog('info', 'Audio', 'Utterance pause detected')
+          questionDetector?.onUtteranceEnd()
+        }, 1400)
       })
 
       activeSttService.on('utteranceEnd', () => {
         console.log('Processing utterance...')
-        sendAppLog('info', 'Audio', 'Utterance pause detected')
-        if (utteranceDebounceTimer) {
-          clearTimeout(utteranceDebounceTimer)
-          utteranceDebounceTimer = null
+        const timeSinceSpeech = questionDetector
+          ? Date.now() - questionDetector.getLastTranscriptTime()
+          : 2000
+
+        // Only trigger if there has actually been >= 1200ms of silence.
+        // If words were spoken < 1200ms ago, let the 1400ms debounce timer complete the silence window
+        // so intermediate clause breathing does not chop the question in half.
+        if (timeSinceSpeech >= 1200) {
+          sendAppLog('info', 'Audio', 'Utterance pause detected')
+          if (utteranceDebounceTimer) {
+            clearTimeout(utteranceDebounceTimer)
+            utteranceDebounceTimer = null
+          }
+          questionDetector?.onUtteranceEnd()
         }
-        questionDetector?.onUtteranceEnd()
         mainWindow?.webContents.send('utterance-end')
       })
 
