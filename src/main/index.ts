@@ -105,12 +105,10 @@ app.whenReady().then(() => {
   })
 })
 
-// Quit when all windows are closed, except on macOS
+// Quit when all windows are closed (including macOS — fully exit on close)
 app.on('window-all-closed', () => {
   cleanupIpcHandlers()
-  if (process.platform !== 'darwin') {
-    app.quit()
-  }
+  app.quit()
 })
 
 // Cleanup on quit
