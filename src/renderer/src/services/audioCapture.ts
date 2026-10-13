@@ -19,6 +19,8 @@ export class AudioCaptureService {
   private mediaStream: MediaStream | null = null
   private workletNode: AudioWorkletNode | null = null
   private sourceNode: MediaStreamAudioSourceNode | null = null
+  private interviewerAnalyser: AnalyserNode | null = null
+  private lastInterviewerSpeechTime = 0
 
   // Candidate channel (Microphone VAD for Dual-Channel Speaker Separation)
   private candidateStream: MediaStream | null = null
@@ -108,6 +110,13 @@ export class AudioCaptureService {
       })
 
       this.sourceNode = this.audioContext.createMediaStreamSource(this.mediaStream)
+
+      // Connect Interviewer Channel to Analyser for real-time acoustic echo & bleed gating
+      this.interviewerAnalyser = this.audioContext.createAnalyser()
+      this.interviewerAnalyser.fftSize = 512
+      this.interviewerAnalyser.smoothingTimeConstant = 0.2
+      this.sourceNode.connect(this.interviewerAnalyser)
+
       await this.audioContext.audioWorklet.addModule(this.createWorkletBlobUrl())
       this.workletNode = new AudioWorkletNode(this.audioContext, 'audio-processor')
 
@@ -156,7 +165,9 @@ export class AudioCaptureService {
     // Connect mic to analyser ONLY (do NOT connect to audioContext.destination to avoid feedback)
     this.candidateSourceNode.connect(this.candidateAnalyser)
 
-    const buffer = new Float32Array(this.candidateAnalyser.fftSize)
+    const candidateBuffer = new Float32Array(this.candidateAnalyser.fftSize)
+    const interviewerBuffer = this.interviewerAnalyser ? new Float32Array(this.interviewerAnalyser.fftSize) : null
+
     let noiseFloor = 0.015
     this.candidateSpeechFrames = 0
     this.candidateSilenceFrames = 0
@@ -166,40 +177,78 @@ export class AudioCaptureService {
     this.vadInterval = setInterval(() => {
       if (!this.candidateAnalyser) return
 
-      this.candidateAnalyser.getFloatTimeDomainData(buffer)
-      let sum = 0
-      for (let i = 0; i < buffer.length; i++) {
-        sum += buffer[i] * buffer[i]
+      // 1. Measure Interviewer Channel Energy (System Audio Loopback)
+      let interviewerRms = 0
+      if (this.interviewerAnalyser && interviewerBuffer) {
+        this.interviewerAnalyser.getFloatTimeDomainData(interviewerBuffer)
+        let intSum = 0
+        for (let i = 0; i < interviewerBuffer.length; i++) {
+          intSum += interviewerBuffer[i] * interviewerBuffer[i]
+        }
+        interviewerRms = Math.sqrt(intSum / interviewerBuffer.length)
       }
-      const rms = Math.sqrt(sum / buffer.length)
 
-      // Adaptive speech threshold based on environmental noise floor
-      const dynamicThreshold = Math.max(0.035, noiseFloor * 2.8)
+      // Track if interviewer audio is currently playing through the computer speakers
+      const isInterviewerSpeaking = interviewerRms > 0.008
+      if (isInterviewerSpeaking) {
+        this.lastInterviewerSpeechTime = Date.now()
+      }
 
-      if (rms > dynamicThreshold) {
+      // 2. Measure Candidate Microphone Energy
+      this.candidateAnalyser.getFloatTimeDomainData(candidateBuffer)
+      let micSum = 0
+      for (let i = 0; i < candidateBuffer.length; i++) {
+        micSum += candidateBuffer[i] * candidateBuffer[i]
+      }
+      const candidateRms = Math.sqrt(micSum / candidateBuffer.length)
+
+      // 3. Parakeet AI Acoustic Gate / Bleed Suppression:
+      // When the interviewer is speaking (or spoke within the last 800ms hangover window),
+      // ANY sound picked up by the microphone is speaker acoustic bleed and MUST BE IGNORED.
+      const timeSinceInterviewerAudio = Date.now() - this.lastInterviewerSpeechTime
+      const isInterviewerActive = isInterviewerSpeaking || timeSinceInterviewerAudio < 800
+
+      if (isInterviewerActive) {
+        // Speaker bleed active - candidate cannot be speaking right now
+        this.candidateSpeechFrames = 0
+        if (this.isCandidateSpeaking) {
+          this.isCandidateSpeaking = false
+          console.log('[AudioCapture] 🛡️ Interviewer active ──> Suppressing candidate mic bleed')
+          if (window.api?.sendCandidateSpeakingState) {
+            window.api.sendCandidateSpeakingState(false, false)
+          }
+        }
+        // Update noise floor baseline tracking
+        noiseFloor = noiseFloor * 0.95 + candidateRms * 0.05
+        return
+      }
+
+      // 4. Candidate VAD when interviewer is genuinely silent
+      const dynamicThreshold = Math.max(0.038, noiseFloor * 2.8)
+
+      if (candidateRms > dynamicThreshold) {
         this.candidateSpeechFrames++
         this.candidateSilenceFrames = 0
 
-        // Require at least 5 sustained frames (250ms) to avoid single clicks/bleed
+        // Require at least 5 sustained frames (250ms) of speech during interviewer silence
         if (this.candidateSpeechFrames >= 5 && !this.isCandidateSpeaking) {
           this.isCandidateSpeaking = true
           this.candidateSpeechStartTime = Date.now()
-          console.log('[AudioCapture] 🎙️ Candidate speaking detected (Microphone active)')
+          console.log('[AudioCapture] 🎙️ Candidate speaking detected (Interviewer is silent)')
           if (window.api?.sendCandidateSpeakingState) {
             window.api.sendCandidateSpeakingState(true)
           }
         }
       } else {
-        // Adapt background noise floor smoothly during silence
-        noiseFloor = noiseFloor * 0.95 + rms * 0.05
+        noiseFloor = noiseFloor * 0.95 + candidateRms * 0.05
         this.candidateSilenceFrames++
         this.candidateSpeechFrames = 0
 
-        // If candidate silent for ~1000ms (20 frames of 50ms) after speaking
+        // Candidate finished answering (silent for 1000ms after speaking)
         if (this.candidateSilenceFrames >= 20 && this.isCandidateSpeaking) {
           this.isCandidateSpeaking = false
           const speechDurationMs = Date.now() - this.candidateSpeechStartTime
-          const wasRealAnswer = speechDurationMs >= 2500 // At least 2.5s of speaking to be an actual answer
+          const wasRealAnswer = speechDurationMs >= 2500 // At least 2.5s to be an actual answer
 
           console.log(
             `[AudioCapture] 🤫 Candidate stopped speaking (${speechDurationMs}ms, wasAnswer: ${wasRealAnswer})`
@@ -274,6 +323,12 @@ export class AudioCaptureService {
       this.candidateAnalyser.disconnect()
       this.candidateAnalyser = null
     }
+
+    if (this.interviewerAnalyser) {
+      this.interviewerAnalyser.disconnect()
+      this.interviewerAnalyser = null
+    }
+    this.lastInterviewerSpeechTime = 0
 
     if (this.candidateSourceNode) {
       this.candidateSourceNode.disconnect()

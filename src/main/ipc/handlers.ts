@@ -474,8 +474,7 @@ export function initializeIpcHandlers(window: BrowserWindow): void {
     questionDetector?.setCandidateSpeaking(isSpeaking)
     mainWindow?.webContents.send('candidate-speaking', isSpeaking)
     if (isSpeaking) {
-      sendAppLog('info', 'Candidate', 'Candidate speaking — question detection paused')
-      openaiService?.abortActiveGeneration()
+      sendAppLog('info', 'Candidate', 'Candidate speaking')
     } else {
       if (wasAnswer !== false) {
         questionDetector?.turnBoundaryReset()
