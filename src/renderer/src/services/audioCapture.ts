@@ -19,7 +19,6 @@ export class AudioCaptureService {
   private mediaStream: MediaStream | null = null
   private workletNode: AudioWorkletNode | null = null
   private sourceNode: MediaStreamAudioSourceNode | null = null
-  private interviewerAnalyser: AnalyserNode | null = null
   private isCapturing = false
   private options: AudioCaptureOptions
 
@@ -64,15 +63,15 @@ export class AudioCaptureService {
   }
 
   /**
-   * Starts Dual-Channel Audio Capture:
-   * 1. Interviewer Channel: Captured via desktopCapturer loopback (pure audio from Zoom/Teams/Meet).
-   * 2. Candidate Channel: Captured via Microphone for Speaker Separation & Turn Reset.
+   * Starts Single-Channel System Audio Capture:
+   * Captures pure interviewer audio from Zoom/Teams/Meet via desktopCapturer loopback.
+   * Candidate microphone is completely excluded (not listened to).
    */
   async startSystemAudioCapture(sourceId: string): Promise<void> {
     if (this.isCapturing) return
 
     try {
-      // 1. Interviewer Channel (System Audio Loopback)
+      // System Audio Loopback (interviewer voice only)
       this.mediaStream = await navigator.mediaDevices.getUserMedia({
         audio: {
           // @ts-ignore - Electron specific constraint
@@ -98,12 +97,6 @@ export class AudioCaptureService {
       })
 
       this.sourceNode = this.audioContext.createMediaStreamSource(this.mediaStream)
-
-      // Connect Interviewer Channel to Analyser for real-time acoustic echo & bleed gating
-      this.interviewerAnalyser = this.audioContext.createAnalyser()
-      this.interviewerAnalyser.fftSize = 512
-      this.interviewerAnalyser.smoothingTimeConstant = 0.2
-      this.sourceNode.connect(this.interviewerAnalyser)
 
       await this.audioContext.audioWorklet.addModule(this.createWorkletBlobUrl())
       this.workletNode = new AudioWorkletNode(this.audioContext, 'audio-processor')
@@ -177,11 +170,6 @@ export class AudioCaptureService {
   }
 
   async stop(): Promise<void> {
-    if (this.interviewerAnalyser) {
-      this.interviewerAnalyser.disconnect()
-      this.interviewerAnalyser = null
-    }
-
     if (this.workletNode) {
       this.workletNode.disconnect()
       this.workletNode = null
