@@ -13,6 +13,7 @@ export interface AnswerEntry {
   answer: string
   timestamp: number
   isStreaming: boolean
+  category?: 'architecture_project' | 'behavioral' | 'coding' | 'conceptual' | 'unknown'
 }
 
 export interface AppSettings {
@@ -53,6 +54,7 @@ interface InterviewState {
   isCapturing: boolean
   isConnected: boolean
   isSpeaking: boolean
+  isCandidateSpeaking: boolean
   isGenerating: boolean
   isProcessingScreenshot: boolean
 
@@ -67,6 +69,7 @@ interface InterviewState {
   answers: AnswerEntry[]
   currentAnswer: string
   currentQuestion: string
+  currentQuestionCategory?: 'architecture_project' | 'behavioral' | 'coding' | 'conceptual' | 'unknown'
 
   // Settings
   settings: AppSettings
@@ -91,6 +94,7 @@ interface InterviewState {
   setCapturing: (isCapturing: boolean) => void
   setConnected: (isConnected: boolean) => void
   setSpeaking: (isSpeaking: boolean) => void
+  setCandidateSpeaking: (isCandidateSpeaking: boolean) => void
   setGenerating: (isGenerating: boolean) => void
   setProcessingScreenshot: (processing: boolean) => void
 
@@ -100,7 +104,10 @@ interface InterviewState {
 
   addAnswer: (entry: AnswerEntry) => void
   updateCurrentAnswer: (chunk: string) => void
-  setCurrentQuestion: (question: string) => void
+  setCurrentQuestion: (
+    question: string,
+    category?: 'architecture_project' | 'behavioral' | 'coding' | 'conceptual' | 'unknown'
+  ) => void
   finalizeAnswer: () => void | Promise<void>
   clearAnswers: () => void
 
@@ -154,6 +161,7 @@ export const useInterviewStore = create<InterviewState>((set, get) => ({
   isCapturing: false,
   isConnected: false,
   isSpeaking: false,
+  isCandidateSpeaking: false,
   isGenerating: false,
   isProcessingScreenshot: false,
   isClickThrough: false,
@@ -164,6 +172,7 @@ export const useInterviewStore = create<InterviewState>((set, get) => ({
   answers: [],
   currentAnswer: '',
   currentQuestion: '',
+  currentQuestionCategory: undefined,
 
   settings: DEFAULT_SETTINGS,
   showSettings: false,
@@ -181,6 +190,7 @@ export const useInterviewStore = create<InterviewState>((set, get) => ({
   setCapturing: (isCapturing) => set({ isCapturing }),
   setConnected: (isConnected) => set({ isConnected }),
   setSpeaking: (isSpeaking) => set({ isSpeaking }),
+  setCandidateSpeaking: (isCandidateSpeaking) => set({ isCandidateSpeaking }),
   setGenerating: (isGenerating) => set({ isGenerating }),
   setProcessingScreenshot: (processing) => set({ isProcessingScreenshot: processing }),
 
@@ -207,7 +217,8 @@ export const useInterviewStore = create<InterviewState>((set, get) => ({
     set((state) => ({
       answers: [...state.answers, entry],
       currentAnswer: '',
-      currentQuestion: entry.question
+      currentQuestion: entry.question,
+      currentQuestionCategory: entry.category
     })),
 
   updateCurrentAnswer: (chunk) =>
@@ -216,7 +227,8 @@ export const useInterviewStore = create<InterviewState>((set, get) => ({
       isGenerating: true
     })),
 
-  setCurrentQuestion: (question) => set({ currentQuestion: question }),
+  setCurrentQuestion: (question, category) =>
+    set({ currentQuestion: question, currentQuestionCategory: category }),
 
   finalizeAnswer: async () => {
     const state = get()
@@ -226,12 +238,14 @@ export const useInterviewStore = create<InterviewState>((set, get) => ({
         question: state.currentQuestion,
         answer: state.currentAnswer,
         timestamp: Date.now(),
-        isStreaming: false
+        isStreaming: false,
+        category: state.currentQuestionCategory
       }
       set((state) => ({
         answers: [...state.answers.slice(-20), entry], // Keep last 20 answers
         currentAnswer: '',
         currentQuestion: '',
+        currentQuestionCategory: undefined,
         isGenerating: false
       }))
       // Save to history

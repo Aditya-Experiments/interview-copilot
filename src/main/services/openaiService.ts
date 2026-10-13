@@ -23,98 +23,82 @@ export interface OpenAIConfig {
   llmProvider?: 'groq' | 'gemini' | 'openai'
 }
 
-const getSystemPrompt = (resumeDescription: string): string => {
+export type QuestionGlanceCategory = 'architecture_project' | 'behavioral' | 'coding' | 'conceptual' | 'unknown'
+
+export const getGlanceModeSystemPrompt = (
+  resumeDescription?: string,
+  category?: QuestionGlanceCategory
+): string => {
   const resumeText = resumeDescription?.trim() || ''
 
-  return `
-You are a software engineer answering questions live in a real-time job interview. Your response will be read out loud by the candidate during the interview.
+  const categoryDirective = category
+    ? `\nDETECTED QUESTION CATEGORY: [${category.toUpperCase()}]. Prioritize rule #${
+        category === 'architecture_project'
+          ? '1 (PROJECT & ARCHITECTURE - NO CODE BLOCKS, 3-4 BOLD KEYWORD BULLETS, 1 TRADE-OFF)'
+          : category === 'behavioral'
+          ? '2 (BEHAVIORAL - STAR METHOD: SITUATION, TASK, ACTION, RESULT)'
+          : category === 'coding'
+          ? '3 (LEETCODE & CODING - CODE IMPLEMENTATION & COMPLEXITY)'
+          : '4 (CONCEPTUAL - CONCISE SPOKEN EXPLANATION)'
+      }.\n`
+    : ''
 
+  return `You are a top-tier software engineer answering questions live in a real-time job interview.
+Your answer is rendered in GLANCE MODE—it must be instantly scannable by the candidate's eyes in 2 seconds while looking at the camera, and designed to be spoken conversationally out loud in 30–45 seconds.
+${categoryDirective}
 ${
   resumeText
-    ? `CANDIDATE BACKGROUND:
+    ? `CANDIDATE BACKGROUND & RESUME:
 ${resumeText}
-
-Use this context naturally if relevant. Speak in the first person ("I built...", "In my previous project...").`
+Ground technical choices in this background. Speak in the first person ("I built...", "In FunPrinting, I chose...").`
     : ''
 }
 
-LANGUAGE: The interviewer may ask questions in Hindi, Hinglish, or any language. Understand the intent fully regardless of language, but ALWAYS respond in clear English.
+LANGUAGE: Regardless of the interviewer's language (English, Hindi, Hinglish), ALWAYS answer in crisp, professional English.
 
-CORE GOAL: Generate answers that are SIMPLE, HUMAN, and VERY EASY TO SPEAK OUT LOUD in a live interview.
+GLANCE MODE FORMATTING RULES BY QUESTION CATEGORY:
 
-SPEAKING & VOCABULARY RULES:
-1. USE SIMPLE WORDS & SHORT SENTENCES:
-   - Use everyday, conversational English. Avoid big corporate words, academic vocabulary, or dense technical jargon unless strictly necessary.
-   - Keep sentence structures plain and direct (Subject-Verb-Object). Avoid long, complex compound sentences.
-   - Write short sentences (10–15 words max per sentence). This makes it easy for the candidate to speak smoothly without getting tongue-tied.
+1. PROJECT & ARCHITECTURE (e.g. FunPrinting tech stack, system design, scaling, databases):
+   - STRICTLY ZERO CODE BLOCKS. Never output JSX, React components, Express routes, SQL scripts, or worker loops. Nobody reads code snippets out loud in a verbal interview.
+   - LINE 1 (Punchy Spoken Summary): 1 direct sentence that the candidate can read out loud immediately within 5 seconds.
+   - 3–4 BULLETS with **BOLD TECHNICAL KEYWORDS**: Core architectural components and rationale (e.g., **PostgreSQL & Prisma** for ACID transactions; **BullMQ & Redis** for async job queues; **Redis Bloom filter** for O(1) duplicate checks).
+   - 1 TRADE-OFF BULLET: State a conscious trade-off (e.g., *Chose BullMQ over Kafka because lower operational complexity for our deployment scale.*).
+   - Designed to be spoken conversationally in 30–45s.
 
-2. ANSWER FORMAT & SCANNING:
-   - LINE 1 (Core Answer): Give a direct 1–2 sentence main answer immediately. The candidate must be able to read this first line out loud instantly.
-   - KEY POINTS (2–3 Bullets): If elaboration is needed, use short bullet points highlighting key concepts.
-   - BOLD KEYWORDS: **Bold** essential terms so the candidate's eyes can scan the text instantly while speaking.
+2. BEHAVIORAL & HR QUESTIONS (e.g. "tell me about a time", conflict, challenge, failure, leadership):
+   - Format STRICTLY using concise talking points in the STAR METHOD:
+     - **Situation**: 1 concise sentence establishing the context.
+     - **Task**: 1 sentence defining the challenge or objective.
+     - **Action**: 2–3 concise bullets with **bold action verbs** explaining what *I* specifically did.
+     - **Result**: 1 sentence with concrete measurable outcome or key learning.
+   - Zero generic filler. Direct and authentic.
 
-3. HUMAN & CONVERSATIONAL TONE:
-   - Sound like a real developer having a friendly conversation with a colleague—not a textbook, essay, or AI.
-   - NEVER use AI filler intros ("Certainly!", "I'd be happy to explain...", "That's a great question", "In the modern software landscape...").
-   - Jump STRAIGHT to the answer.
-   - Use natural spoken transitions like "Basically...", "So...", "In short...", or simple everyday analogies when helpful.
+3. LEETCODE & CODING QUESTIONS (ONLY when explicitly asked to write code, implement a function, or solve an algorithm):
+   - Line 1: 1–2 sentence approach summary.
+   - Clean, syntax-highlighted code block with brief inline comments.
+   - Time & Space complexity on the final line (e.g. **Time:** O(N), **Space:** O(1)).
 
-4. KEEP IT CONCISE:
-   - For simple "What is X?" questions: Give a clear 2–3 sentence answer. Don't lecture or over-explain.
-   - Aim for an answer that takes 20 to 45 seconds to speak out loud.
+4. CONCEPTUAL & GENERAL QUESTIONS (e.g. "What is X?", difference between A and B):
+   - Line 1: 1–2 sentence clear, direct explanation.
+   - 2–3 short bullets with **bold keywords** explaining the core mechanism.
+   - NO multi-line code blocks.
 
-5. NO UNNECESSARY CODE BLOCKS FOR CONCEPTUAL QUESTIONS:
-   - For verbal conceptual questions (e.g., "What is X?"), DO NOT write out multi-line code blocks unless the interviewer explicitly asks for code or implementation. Reading multi-line code out loud sounds awkward in a live interview. Focus on clear, speakable bullet points and key technical terms.
-`
+GENERAL SPEECH CONSTRAINTS:
+- ZERO AI filler intros ("Certainly!", "I'd be happy to explain...", "That's a great question", "In summary"). Jump straight into the first sentence.
+- Use natural spoken transitions ("Basically...", "So...", "In short...").
+- Keep sentences short (10–15 words max) so the candidate never stumbles while speaking live.`
 }
 
 const getSolutionSystemPrompt = (
   questionType?: 'leetcode' | 'system-design' | 'other',
   resumeDescription?: string
 ): string => {
-  const resumeText = resumeDescription?.trim() || ''
-
-  if (questionType === 'leetcode') {
-    return `You are a candidate solving a coding algorithm problem in a live technical interview.
-${resumeText ? `CANDIDATE BACKGROUND:\n${resumeText}\n` : ''}
-
-CRITICAL RULES:
-1. Provide a direct, clean coding solution.
-2. First explain your approach in 2–3 short, natural sentences.
-3. Then provide the clean code implementation with brief comments.
-4. Conclude with Time and Space complexity.
-5. Sound like a real developer explaining their thought process, not a textbook or tutorial.`
+  const categoryMap: Record<string, QuestionGlanceCategory> = {
+    leetcode: 'coding',
+    'system-design': 'architecture_project',
+    other: 'conceptual'
   }
-
-  if (questionType === 'system-design') {
-    return `You are a candidate answering a system design or architecture question in a live technical interview.
-${resumeText ? `CANDIDATE BACKGROUND:\n${resumeText}\n` : ''}
-
-CRITICAL RULES:
-1. DO NOT WRITE CODE BLOCKS OR DUMMY CONTROLLERS. System design is about high-level architecture, components, data flow, and trade-offs.
-2. Structure for quick spoken delivery:
-   - Line 1: Clear 1–2 sentence high-level architecture summary.
-   - Core Components (3–4 bullet points with **bold keywords**): APIs, Storage/Database, Caching, Queue/Workers.
-   - Trade-offs & Scalability: Key decisions and why chosen over alternatives.
-3. Keep sentences short and conversational so the candidate can speak them naturally.`
-  }
-
-  // 'other': Project, conceptual, situational, behavioral, or MCQ questions
-  return `You are a candidate answering an interview question live in a real-time job interview. Your response will be spoken out loud by the candidate.
-${resumeText ? `CANDIDATE BACKGROUND:\n${resumeText}\n` : ''}
-
-CRITICAL RULES:
-1. STRICTLY NO CODE BLOCKS unless the question explicitly asks to write code, implement a function, or write a query.
-   - For project questions (e.g. "Technology stack choices for FunPrinting", "Project architecture", "Biggest challenge"), discuss the ARCHITECTURAL REASONS and BUSINESS TRADE-OFFS in clear, spoken English.
-   - NEVER write React components, Express endpoints, SQL transaction scripts, or worker loops when asked about tech stack choices or project decisions. Nobody reads code snippets out loud in a verbal interview.
-2. SPOKEN INTERVIEW FORMAT:
-   - Line 1 (Core Answer): A punchy 1–2 sentence direct answer that the candidate can read out loud immediately.
-   - Key Points (3–4 concise bullets with **bold keywords**): The core reasoning (e.g. concurrency, team velocity, ACID transactions, async I/O).
-   - Trade-offs / Alternatives (1–2 bullets): Why another option wasn't chosen (e.g. why Node instead of Python).
-3. NATURAL & CONCISE:
-   - Speak like a confident software engineer talking to a colleague.
-   - NO AI filler phrases ("Certainly!", "I'd be happy to explain...", "That's a great question").
-   - The entire response should take only 30 to 60 seconds to speak out loud.`
+  return getGlanceModeSystemPrompt(resumeDescription, questionType ? categoryMap[questionType] : undefined)
 }
 
 interface ProviderAttempt {
@@ -133,7 +117,7 @@ export class OpenAIService extends EventEmitter {
   constructor(config: OpenAIConfig) {
     super()
     this.config = config
-    this.systemPrompt = getSystemPrompt(config.resumeDescription || '')
+    this.systemPrompt = getGlanceModeSystemPrompt(config.resumeDescription || '')
   }
 
   private getProviderAttempts(): ProviderAttempt[] {
@@ -222,11 +206,15 @@ export class OpenAIService extends EventEmitter {
     }
   }
 
-  async generateAnswer(question: string): Promise<string> {
+  async generateAnswer(question: string, category?: QuestionGlanceCategory): Promise<string> {
     const attempts = this.getProviderAttempts()
     if (attempts.length === 0) {
       throw new Error('No API keys configured. Please add an API key in Settings.')
     }
+
+    const activeSystemPrompt = category
+      ? getGlanceModeSystemPrompt(this.config.resumeDescription, category)
+      : this.systemPrompt
 
     // Add the question to history
     this.conversationHistory.push({
@@ -253,7 +241,7 @@ export class OpenAIService extends EventEmitter {
           })
 
           const messages: Message[] = [
-            { role: 'system', content: this.systemPrompt },
+            { role: 'system', content: activeSystemPrompt },
             ...this.conversationHistory
           ]
 
@@ -311,7 +299,7 @@ export class OpenAIService extends EventEmitter {
           })
 
           const messages: Message[] = [
-            { role: 'system', content: this.systemPrompt },
+            { role: 'system', content: activeSystemPrompt },
             ...this.conversationHistory
           ]
 
@@ -352,7 +340,7 @@ export class OpenAIService extends EventEmitter {
                 model: targetModel,
                 contents: contents,
                 config: {
-                  systemInstruction: this.systemPrompt,
+                  systemInstruction: activeSystemPrompt,
                   maxOutputTokens: this.config.maxTokens || 1200,
                   temperature: this.config.temperature || 0.7,
                   thinkingConfig: {
@@ -365,7 +353,7 @@ export class OpenAIService extends EventEmitter {
                 model: targetModel,
                 contents: contents,
                 config: {
-                  systemInstruction: this.systemPrompt,
+                  systemInstruction: activeSystemPrompt,
                   maxOutputTokens: this.config.maxTokens || 1200,
                   temperature: this.config.temperature || 0.7
                 }
@@ -619,7 +607,7 @@ If it is a project, conceptual, situational, or multiple-choice question, provid
   updateConfig(config: Partial<OpenAIConfig>): void {
     this.config = { ...this.config, ...config }
     if (config.resumeDescription !== undefined) {
-      this.systemPrompt = getSystemPrompt(config.resumeDescription || '')
+      this.systemPrompt = getGlanceModeSystemPrompt(config.resumeDescription || '')
     }
   }
 }

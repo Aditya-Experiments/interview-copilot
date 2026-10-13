@@ -1,10 +1,52 @@
 import { electronApp, is, optimizer } from '@electron-toolkit/utils'
-import { app, BrowserWindow, nativeImage, screen, session, shell } from 'electron'
+import { app, BrowserWindow, globalShortcut, nativeImage, screen, session, shell } from 'electron'
 import { join } from 'path'
 import icon from '../../resources/icon.png?asset'
 import { cleanupIpcHandlers, initializeIpcHandlers } from './ipc/handlers'
 
 let mainWindow: BrowserWindow | null = null
+
+function setupGlobalStealthShortcuts(win: BrowserWindow): void {
+  // 1. Instant Screenshot & Solve (Cmd/Ctrl + Shift + S)
+  globalShortcut.register('CommandOrControl+Shift+S', () => {
+    console.log('[StealthHotkey] Triggered Screenshot & Solve (Cmd/Ctrl+Shift+S)')
+    win.webContents.send('trigger-screenshot-solve')
+  })
+
+  // 2. Instant Stealth Clear (Cmd/Ctrl + Shift + C) - wipes active answers & transcript
+  globalShortcut.register('CommandOrControl+Shift+C', () => {
+    console.log('[StealthHotkey] Triggered Stealth Clear (Cmd/Ctrl+Shift+C)')
+    win.webContents.send('trigger-stealth-clear')
+  })
+
+  // 3. Stealth Panic Toggle (Cmd/Ctrl + Shift + H) - toggle window visibility
+  globalShortcut.register('CommandOrControl+Shift+H', () => {
+    if (win.isVisible()) {
+      console.log('[StealthHotkey] Window hidden (Cmd/Ctrl+Shift+H)')
+      win.hide()
+    } else {
+      console.log('[StealthHotkey] Window shown (Cmd/Ctrl+Shift+H)')
+      win.show()
+      win.focus()
+    }
+  })
+
+  // 4. Fine-tune opacity up (Cmd/Ctrl + Shift + Up)
+  globalShortcut.register('CommandOrControl+Shift+Up', () => {
+    const current = win.getOpacity()
+    const next = Math.min(1, Math.round((current + 0.15) * 100) / 100)
+    win.setOpacity(next)
+    console.log(`[StealthHotkey] Window opacity: ${next}`)
+  })
+
+  // 5. Fine-tune opacity down (Cmd/Ctrl + Shift + Down)
+  globalShortcut.register('CommandOrControl+Shift+Down', () => {
+    const current = win.getOpacity()
+    const next = Math.max(0.15, Math.round((current - 0.15) * 100) / 100)
+    win.setOpacity(next)
+    console.log(`[StealthHotkey] Window opacity: ${next}`)
+  })
+}
 
 function createWindow(): void {
   const appIcon = nativeImage.createFromPath(icon)
@@ -51,7 +93,7 @@ function createWindow(): void {
     mainWindow.setAlwaysOnTop(true, 'screen-saver')
   }
 
-  // Enable screen share protection - hides window from screen capture
+  // Enable screen share protection - hides window from screen capture (Zoom, Teams, Meet)
   mainWindow.setContentProtection(true)
 
   mainWindow.on('ready-to-show', () => {
@@ -60,6 +102,8 @@ function createWindow(): void {
     }
     mainWindow?.show()
     mainWindow?.focus()
+    // Re-verify content protection whenever window is shown
+    mainWindow?.setContentProtection(true)
   })
 
   mainWindow.webContents.setWindowOpenHandler((details) => {
@@ -69,6 +113,9 @@ function createWindow(): void {
 
   // Initialize IPC handlers
   initializeIpcHandlers(mainWindow)
+
+  // Setup stealth global shortcuts
+  setupGlobalStealthShortcuts(mainWindow)
 
   // Grant microphone permissions
   session.defaultSession.setPermissionRequestHandler((_webContents, permission, callback) => {
@@ -107,11 +154,13 @@ app.whenReady().then(() => {
 
 // Quit when all windows are closed (including macOS — fully exit on close)
 app.on('window-all-closed', () => {
+  globalShortcut.unregisterAll()
   cleanupIpcHandlers()
   app.quit()
 })
 
 // Cleanup on quit
 app.on('before-quit', () => {
+  globalShortcut.unregisterAll()
   cleanupIpcHandlers()
 })

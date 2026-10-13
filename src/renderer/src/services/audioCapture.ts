@@ -19,6 +19,16 @@ export class AudioCaptureService {
   private mediaStream: MediaStream | null = null
   private workletNode: AudioWorkletNode | null = null
   private sourceNode: MediaStreamAudioSourceNode | null = null
+
+  // Candidate channel (Microphone VAD for Dual-Channel Speaker Separation)
+  private candidateStream: MediaStream | null = null
+  private candidateSourceNode: MediaStreamAudioSourceNode | null = null
+  private candidateAnalyser: AnalyserNode | null = null
+  private vadInterval: ReturnType<typeof setInterval> | null = null
+  private isCandidateSpeaking = false
+  private candidateSpeechFrames = 0
+  private candidateSilenceFrames = 0
+
   private isCapturing = false
   private options: AudioCaptureOptions
 
@@ -30,7 +40,6 @@ export class AudioCaptureService {
     if (this.isCapturing) return
 
     try {
-      // Get microphone stream
       this.mediaStream = await navigator.mediaDevices.getUserMedia({
         audio: {
           sampleRate: this.options.sampleRate,
@@ -41,29 +50,21 @@ export class AudioCaptureService {
         }
       })
 
-      // Create audio context
       this.audioContext = new AudioContext({
         sampleRate: this.options.sampleRate
       })
 
-      // Create source from microphone
       this.sourceNode = this.audioContext.createMediaStreamSource(this.mediaStream)
-
-      // Load and create audio worklet for processing
       await this.audioContext.audioWorklet.addModule(this.createWorkletBlobUrl())
-
       this.workletNode = new AudioWorkletNode(this.audioContext, 'audio-processor')
 
-      // Handle audio data from worklet
       this.workletNode.port.onmessage = (event) => {
         if (event.data.audioData) {
           this.handleAudioData(event.data.audioData)
         }
       }
 
-      // Connect nodes
       this.sourceNode.connect(this.workletNode)
-
       this.isCapturing = true
     } catch (error) {
       console.error('Failed to start microphone capture:', error)
@@ -71,11 +72,16 @@ export class AudioCaptureService {
     }
   }
 
+  /**
+   * Starts Dual-Channel Audio Capture:
+   * 1. Interviewer Channel: Captured via desktopCapturer loopback (pure audio from Zoom/Teams/Meet).
+   * 2. Candidate Channel: Captured via Microphone for Speaker Separation & Turn Reset.
+   */
   async startSystemAudioCapture(sourceId: string): Promise<void> {
     if (this.isCapturing) return
 
     try {
-      // Use desktopCapturer source for system audio
+      // 1. Interviewer Channel (System Audio Loopback)
       this.mediaStream = await navigator.mediaDevices.getUserMedia({
         audio: {
           // @ts-ignore - Electron specific constraint
@@ -96,17 +102,12 @@ export class AudioCaptureService {
       // Remove video track, we only need audio
       this.mediaStream.getVideoTracks().forEach((track) => track.stop())
 
-      // Create audio context
       this.audioContext = new AudioContext({
         sampleRate: this.options.sampleRate
       })
 
-      // Create source from stream
       this.sourceNode = this.audioContext.createMediaStreamSource(this.mediaStream)
-
-      // Load audio worklet
       await this.audioContext.audioWorklet.addModule(this.createWorkletBlobUrl())
-
       this.workletNode = new AudioWorkletNode(this.audioContext, 'audio-processor')
 
       this.workletNode.port.onmessage = (event) => {
@@ -117,11 +118,86 @@ export class AudioCaptureService {
 
       this.sourceNode.connect(this.workletNode)
 
+      // 2. Candidate Channel (Separate Microphone for Speaker Separation)
+      try {
+        await this.startCandidateMicVad()
+      } catch (micErr) {
+        console.warn('Microphone not available for dual-channel separation, falling back to system audio only:', micErr)
+      }
+
       this.isCapturing = true
     } catch (error) {
       console.error('Failed to start system audio capture:', error)
       throw error
     }
+  }
+
+  /**
+   * Initializes Voice Activity Detection (VAD) on the Candidate's microphone.
+   * Prevents candidate speech from triggering AI and resets turn boundary when candidate finishes.
+   */
+  private async startCandidateMicVad(): Promise<void> {
+    if (!this.audioContext) return
+
+    this.candidateStream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true
+      }
+    })
+
+    this.candidateSourceNode = this.audioContext.createMediaStreamSource(this.candidateStream)
+    this.candidateAnalyser = this.audioContext.createAnalyser()
+    this.candidateAnalyser.fftSize = 512
+    this.candidateAnalyser.smoothingTimeConstant = 0.2
+
+    // Connect mic to analyser ONLY (do NOT connect to audioContext.destination to avoid feedback)
+    this.candidateSourceNode.connect(this.candidateAnalyser)
+
+    const buffer = new Float32Array(this.candidateAnalyser.fftSize)
+    const SPEECH_RMS_THRESHOLD = 0.025 // Voice activity threshold
+
+    this.candidateSpeechFrames = 0
+    this.candidateSilenceFrames = 0
+    this.isCandidateSpeaking = false
+
+    this.vadInterval = setInterval(() => {
+      if (!this.candidateAnalyser) return
+
+      this.candidateAnalyser.getFloatTimeDomainData(buffer)
+      let sum = 0
+      for (let i = 0; i < buffer.length; i++) {
+        sum += buffer[i] * buffer[i]
+      }
+      const rms = Math.sqrt(sum / buffer.length)
+
+      if (rms > SPEECH_RMS_THRESHOLD) {
+        this.candidateSpeechFrames++
+        this.candidateSilenceFrames = 0
+
+        // If voice sustained for ~150ms (3 frames of 50ms)
+        if (this.candidateSpeechFrames >= 3 && !this.isCandidateSpeaking) {
+          this.isCandidateSpeaking = true
+          console.log('[AudioCapture] 🎙️ Candidate speaking detected (Microphone active)')
+          if (window.api?.sendCandidateSpeakingState) {
+            window.api.sendCandidateSpeakingState(true)
+          }
+        }
+      } else {
+        this.candidateSilenceFrames++
+        this.candidateSpeechFrames = 0
+
+        // If candidate silent for ~1000ms (20 frames of 50ms) after speaking
+        if (this.candidateSilenceFrames >= 20 && this.isCandidateSpeaking) {
+          this.isCandidateSpeaking = false
+          console.log('[AudioCapture] 🤫 Candidate finished speaking ──> Resetting turn boundary')
+          if (window.api?.sendCandidateSpeakingState) {
+            window.api.sendCandidateSpeakingState(false)
+          }
+        }
+      }
+    }, 50)
   }
 
   private createWorkletBlobUrl(): string {
@@ -171,13 +247,32 @@ export class AudioCaptureService {
   }
 
   private handleAudioData(audioData: ArrayBuffer): void {
-    // Send audio data to main process
     if (window.api) {
       window.api.sendAudioData(audioData)
     }
   }
 
   async stop(): Promise<void> {
+    if (this.vadInterval) {
+      clearInterval(this.vadInterval)
+      this.vadInterval = null
+    }
+
+    if (this.candidateAnalyser) {
+      this.candidateAnalyser.disconnect()
+      this.candidateAnalyser = null
+    }
+
+    if (this.candidateSourceNode) {
+      this.candidateSourceNode.disconnect()
+      this.candidateSourceNode = null
+    }
+
+    if (this.candidateStream) {
+      this.candidateStream.getTracks().forEach((track) => track.stop())
+      this.candidateStream = null
+    }
+
     if (this.workletNode) {
       this.workletNode.disconnect()
       this.workletNode = null
@@ -198,10 +293,21 @@ export class AudioCaptureService {
       this.audioContext = null
     }
 
+    if (this.isCandidateSpeaking) {
+      this.isCandidateSpeaking = false
+      if (window.api?.sendCandidateSpeakingState) {
+        window.api.sendCandidateSpeakingState(false)
+      }
+    }
+
     this.isCapturing = false
   }
 
   getIsCapturing(): boolean {
     return this.isCapturing
+  }
+
+  getIsCandidateSpeaking(): boolean {
+    return this.isCandidateSpeaking
   }
 }

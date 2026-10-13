@@ -11,12 +11,14 @@ export interface UseInterviewReturn {
   isCapturing: boolean
   isGenerating: boolean
   isSpeaking: boolean
+  isCandidateSpeaking: boolean
   isProcessingScreenshot: boolean
   transcripts: TranscriptEntry[]
   currentTranscript: string
   answers: AnswerEntry[]
   currentAnswer: string
   currentQuestion: string
+  currentQuestionCategory?: 'architecture_project' | 'behavioral' | 'coding' | 'conceptual' | 'unknown'
   settings: AppSettings
   error: string | null
   audioSource: AudioSource
@@ -37,12 +39,14 @@ export function useInterview(): UseInterviewReturn {
     isCapturing: storeCapturing,
     isGenerating,
     isSpeaking,
+    isCandidateSpeaking,
     isProcessingScreenshot,
     transcripts,
     currentTranscript,
     answers,
     currentAnswer,
     currentQuestion,
+    currentQuestionCategory,
     settings,
     error,
     isSessionActive,
@@ -129,12 +133,14 @@ export function useInterview(): UseInterviewReturn {
     isCapturing: storeCapturing || audioCapturing,
     isGenerating,
     isSpeaking,
+    isCandidateSpeaking,
     isProcessingScreenshot,
     transcripts,
     currentTranscript,
     answers,
     currentAnswer,
     currentQuestion,
+    currentQuestionCategory,
     settings,
     error: error || audioError,
     audioSource,

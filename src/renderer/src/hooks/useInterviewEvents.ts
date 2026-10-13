@@ -10,11 +10,14 @@ export function useInterviewEvents(): void {
     addTranscript,
     setCurrentTranscript,
     setSpeaking,
+    setCandidateSpeaking,
     setCurrentQuestion,
     updateCurrentAnswer,
     finalizeAnswer,
     setError,
     setCapturing,
+    setProcessingScreenshot,
+    clearAll,
     setSettings,
     addLog
   } = useInterviewStore()
@@ -67,8 +70,12 @@ export function useInterviewEvents(): void {
       setSpeaking(false)
     })
 
+    const unsubCandidateSpeaking = window.api.onCandidateSpeaking((isSpeaking) => {
+      setCandidateSpeaking(isSpeaking)
+    })
+
     const unsubQuestionDetected = window.api.onQuestionDetected((question) => {
-      setCurrentQuestion(question.text)
+      setCurrentQuestion(question.text, question.category)
     })
 
     const unsubAnswerStream = window.api.onAnswerStream((chunk) => {
@@ -91,7 +98,13 @@ export function useInterviewEvents(): void {
 
     const unsubQuestionDetectedFromImage = window.api.onQuestionDetectedFromImage((question) => {
       console.log('Question detected from screenshot:', question.text)
-      setCurrentQuestion(question.text)
+      const mappedCategory =
+        question.questionType === 'leetcode'
+          ? 'coding'
+          : question.questionType === 'system-design'
+          ? 'architecture_project'
+          : 'conceptual'
+      setCurrentQuestion(question.text, mappedCategory)
     })
 
     const unsubScreenshotNoQuestion = window.api.onScreenshotNoQuestion((data) => {
@@ -103,11 +116,40 @@ export function useInterviewEvents(): void {
       addLog(log)
     })
 
+    // Global Stealth Shortcuts (Cmd/Ctrl + Shift + S / C)
+    const unsubTriggerScreenshotSolve = window.api.onTriggerScreenshotSolve(async () => {
+      try {
+        setError(null)
+        setProcessingScreenshot(true)
+        const captureResult = await window.api.captureScreenshot()
+        if (captureResult.success && captureResult.imageData) {
+          const analysisResult = await window.api.analyzeScreenshot(captureResult.imageData)
+          if (!analysisResult.success) {
+            setError(analysisResult.error || 'Failed to analyze screenshot')
+          }
+        }
+      } catch (err: any) {
+        console.error('Stealth screenshot hotkey error:', err)
+      } finally {
+        setProcessingScreenshot(false)
+      }
+    })
+
+    const unsubTriggerStealthClear = window.api.onTriggerStealthClear(async () => {
+      try {
+        await window.api.clearHistory()
+        clearAll()
+      } catch (err) {
+        console.error('Stealth clear error:', err)
+      }
+    })
+
     return () => {
       console.log('Cleaning up IPC event listeners')
       unsubTranscript()
       unsubSpeechStarted()
       unsubUtteranceEnd()
+      unsubCandidateSpeaking()
       unsubQuestionDetected()
       unsubAnswerStream()
       unsubAnswerComplete()
@@ -116,16 +158,22 @@ export function useInterviewEvents(): void {
       unsubQuestionDetectedFromImage()
       unsubScreenshotNoQuestion()
       unsubAppLog()
+      unsubTriggerScreenshotSolve()
+      unsubTriggerStealthClear()
       listenersSetUp.current = false
     }
   }, [
     addTranscript,
     setCurrentTranscript,
     setSpeaking,
+    setCandidateSpeaking,
     setCurrentQuestion,
     updateCurrentAnswer,
     finalizeAnswer,
     setError,
-    setCapturing
+    setCapturing,
+    setProcessingScreenshot,
+    clearAll,
+    addLog
   ])
 }

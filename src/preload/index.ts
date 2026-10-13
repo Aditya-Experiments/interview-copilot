@@ -12,6 +12,8 @@ export interface DetectedQuestion {
   text: string
   confidence: number
   questionType: 'direct' | 'indirect' | 'rhetorical' | 'unknown'
+  category?: 'architecture_project' | 'behavioral' | 'coding' | 'conceptual' | 'unknown'
+  boundContext?: string
 }
 
 export interface DetectedQuestionFromImage {
@@ -57,6 +59,7 @@ export interface AnswerEntry {
   answer: string
   timestamp: number
   isStreaming: boolean
+  category?: 'architecture_project' | 'behavioral' | 'coding' | 'conceptual' | 'unknown'
 }
 
 export interface AppLogEntry {
@@ -84,6 +87,9 @@ const api = {
   stopCapture: (): Promise<{ success: boolean }> => ipcRenderer.invoke('stop-capture'),
   getCaptureStatus: (): Promise<boolean> => ipcRenderer.invoke('get-capture-status'),
   sendAudioData: (audioData: ArrayBuffer): void => ipcRenderer.send('audio-data', audioData),
+  sendCandidateSpeakingState: (isSpeaking: boolean): void =>
+    ipcRenderer.send('candidate-speaking-state', isSpeaking),
+  resetTurnBoundary: (): Promise<{ success: boolean }> => ipcRenderer.invoke('reset-turn-boundary'),
   getAudioSources: (): Promise<AudioSource[]> => ipcRenderer.invoke('get-audio-sources'),
 
   // Window controls
@@ -237,6 +243,25 @@ const api = {
     ): void => callback(log)
     ipcRenderer.on('app-log', handler)
     return () => ipcRenderer.removeListener('app-log', handler)
+  },
+
+  onCandidateSpeaking: (callback: (isSpeaking: boolean) => void): (() => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, isSpeaking: boolean): void =>
+      callback(isSpeaking)
+    ipcRenderer.on('candidate-speaking', handler)
+    return () => ipcRenderer.removeListener('candidate-speaking', handler)
+  },
+
+  onTriggerScreenshotSolve: (callback: () => void): (() => void) => {
+    const handler = (): void => callback()
+    ipcRenderer.on('trigger-screenshot-solve', handler)
+    return () => ipcRenderer.removeListener('trigger-screenshot-solve', handler)
+  },
+
+  onTriggerStealthClear: (callback: () => void): (() => void) => {
+    const handler = (): void => callback()
+    ipcRenderer.on('trigger-stealth-clear', handler)
+    return () => ipcRenderer.removeListener('trigger-stealth-clear', handler)
   }
 }
 
