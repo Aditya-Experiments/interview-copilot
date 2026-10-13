@@ -35,6 +35,8 @@ Use this context naturally if relevant. Speak in the first person ("I built...",
     : ''
 }
 
+LANGUAGE: The interview question may have been auto-translated from Hindi, Hinglish, or other languages. Understand the intent regardless of phrasing quality, and ALWAYS respond in clear English.
+
 CORE GOAL: Generate answers that are SIMPLE, HUMAN, and VERY EASY TO SPEAK OUT LOUD in a live interview.
 
 SPEAKING & VOCABULARY RULES:

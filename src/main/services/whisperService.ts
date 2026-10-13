@@ -168,13 +168,14 @@ export class WhisperService extends EventEmitter {
         const tempFile = path.join(os.tmpdir(), `whisper_${Date.now()}.wav`)
         fs.writeFileSync(tempFile, wavBuffer)
 
-        const sttModel = isGroq ? 'whisper-large-v3-turbo' : (this.config.model || 'whisper-1')
-        console.log(`===> Sending ${(durationMs / 1000).toFixed(2)}s of audio to ${isGroq ? 'Groq Whisper' : 'OpenAI Whisper'} (${sttModel})...`)
+        // Use translations endpoint: listens to ANY language → outputs English text
+        // whisper-large-v3 required for Groq translation (turbo doesn't support it)
+        const sttModel = isGroq ? 'whisper-large-v3' : (this.config.model || 'whisper-1')
+        console.log(`===> Sending ${(durationMs / 1000).toFixed(2)}s of audio to ${isGroq ? 'Groq' : 'OpenAI'} Whisper Translation (${sttModel})...`)
 
-        const transcription = await this.client.audio.transcriptions.create({
+        const translation = await this.client.audio.translations.create({
           file: fs.createReadStream(tempFile),
           model: sttModel,
-          language: this.config.language || 'en',
           response_format: 'json'
         })
 
@@ -182,7 +183,7 @@ export class WhisperService extends EventEmitter {
           fs.unlinkSync(tempFile)
         }
 
-        text = transcription.text?.trim() || ''
+        text = translation.text?.trim() || ''
       } else {
         console.log(`===> Sending ${(durationMs / 1000).toFixed(2)}s of audio to Gemini Audio API...`)
         const ai = new GoogleGenAI({ apiKey: apiKeyTrimmed })
@@ -194,7 +195,7 @@ export class WhisperService extends EventEmitter {
             }
           },
           {
-            text: 'Transcribe this spoken audio verbatim into English. Output only the exact transcribed speech text. If there is only silence, background noise, or no clear speech, output nothing.'
+            text: 'Listen to this audio and transcribe it into English. If the speaker is speaking in a non-English language (Hindi, Hinglish, etc.), translate it to clear English. Output only the English text. If there is only silence, background noise, or no clear speech, output nothing.'
           }
         ]
 
