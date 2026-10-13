@@ -1,9 +1,13 @@
 import { EventEmitter } from 'events'
 
+export type InterviewQuestionCategory = 'architecture_project' | 'behavioral' | 'coding' | 'conceptual' | 'unknown'
+
 export interface DetectedQuestion {
   text: string
   confidence: number
   questionType: 'direct' | 'indirect' | 'rhetorical' | 'unknown'
+  category?: InterviewQuestionCategory
+  boundContext?: string
 }
 
 // Question starters that appear at clause or sentence boundaries
@@ -116,6 +120,17 @@ const IGNORE_PATTERNS = [
   /^(haan|nahi|theek hai|achha|namaste|dhanyawad|shukriya|ji|haanji)[\s.,!?]*$/i
 ]
 
+// Anaphora patterns (referential pronouns and demonstratives that require premise context)
+const ANAPHORA_PATTERNS = [
+  /\b(this|that|it|these|those)\b/i,
+  /\b(solve this|check this|do this|handle this|approach this|fix this|deal with this)\b/i,
+  /\b(how did you (solve|build|do|handle|fix|scale|approach) (it|this|that))\b/i,
+  /\b(walk me through (this|that|how you would do this|how you would check this))\b/i,
+  /\b(explain (this|that|it))\b/i,
+  /\b(why did you (choose|pick|use) (this|that))\b/i,
+  /\b(what was (the reason|the bottleneck|the challenge) (there|for that))\b/i
+]
+
 interface RecentChunk {
   text: string
   timestamp: number
@@ -124,6 +139,9 @@ interface RecentChunk {
 export class QuestionDetector extends EventEmitter {
   private transcriptBuffer: string[] = []
   private recentChunks: RecentChunk[] = []
+  private interviewerTurnChunks: RecentChunk[] = []
+  private turnStartTime: number = Date.now()
+  private isCandidateSpeaking: boolean = false
   private minQuestionLength = 8 // Allow concise Hindi/English questions
   private minWordCount = 2 // Minimum 2 words (e.g. "क्या किया?", "tell me")
   private confidenceThreshold = 0.55 // Threshold for utteranceEnd detection
@@ -135,32 +153,96 @@ export class QuestionDetector extends EventEmitter {
     super()
   }
 
+  /**
+   * Called by Dual-Channel audio engine when candidate speaks into mic.
+   * Suppresses false triggers and resets interviewer turn upon completion.
+   */
+  setCandidateSpeaking(speaking: boolean): void {
+    this.isCandidateSpeaking = speaking
+  }
+
+  /**
+   * Resets the turn boundary (T=0) when the candidate finishes speaking.
+   * Breathing pauses by the interviewer DO NOT call this.
+   */
+  turnBoundaryReset(): void {
+    console.log('[QuestionDetector] ──> Turn boundary reset: T=0 (Candidate finished speaking)')
+    this.turnStartTime = Date.now()
+    this.interviewerTurnChunks = []
+    this.transcriptBuffer = []
+  }
+
   addTranscript(text: string, isFinal: boolean): void {
+    // If candidate is actively speaking, ignore to prevent confusing candidate voice with interviewer questions
+    if (this.isCandidateSpeaking) {
+      return
+    }
+
     if (isFinal && text.trim()) {
       const trimmed = text.trim()
+      const now = Date.now()
       this.transcriptBuffer.push(trimmed)
-      this.recentChunks.push({ text: trimmed, timestamp: Date.now() })
+      this.recentChunks.push({ text: trimmed, timestamp: now })
+      this.interviewerTurnChunks.push({ text: trimmed, timestamp: now })
+
       // Keep recent chunks within the last 60 seconds (up to 25 chunks)
-      const cutoff = Date.now() - 60000
+      const cutoff = now - 60000
       this.recentChunks = this.recentChunks.filter((c) => c.timestamp >= cutoff).slice(-25)
+
+      // Turn window keeps accumulating across pauses (up to 90 seconds for deep scenarios)
+      const turnCutoff = now - 90000
+      this.interviewerTurnChunks = this.interviewerTurnChunks
+        .filter((c) => c.timestamp >= turnCutoff)
+        .slice(-30)
     }
   }
 
   /**
-   * Reconstructs the complete question by joining all chunks spoken since the last question was answered.
-   * This guarantees that even if the interviewer paused to breathe or spoke a long scenario over 10-30 seconds,
-   * no part of the premise is ever dropped.
+   * Binds anaphoric references ("this", "that", "it") to antecedent entities
+   * mentioned earlier in the turn or in the immediate previous discussion.
+   */
+  private resolveAnaphora(triggerText: string, fullTurnText: string): { boundText: string; boundContext?: string } {
+    const hasAnaphora = ANAPHORA_PATTERNS.some((p) => p.test(triggerText))
+
+    // 1. If full turn text already has premise before the question prompt, dispatch the full scenario
+    if (fullTurnText && fullTurnText !== triggerText && fullTurnText.length > triggerText.length + 10) {
+      return {
+        boundText: fullTurnText,
+        boundContext: `Cumulative scenario premise: "${fullTurnText.slice(0, 150)}..."`
+      }
+    }
+
+    // 2. If question is a short anaphoric follow-up (e.g., "How did you solve it?")
+    // and current turn lacks a premise, bind to the previous topic in history
+    if (hasAnaphora && this.lastEmittedQuestion) {
+      const antecedent = this.lastEmittedQuestion.slice(0, 140)
+      const bound = `Regarding our discussion on "${antecedent}": ${triggerText}`
+      return {
+        boundText: bound,
+        boundContext: `Bound antecedent: "${antecedent}"`
+      }
+    }
+
+    return { boundText: fullTurnText || triggerText }
+  }
+
+  /**
+   * Reconstructs the complete question by joining all chunks spoken since the turn began.
+   * Turn Persistence: Breathing pauses do not reset the turn context.
    */
   private getFullQuestionText(triggerText: string): string {
     const chunks: string[] = []
-    for (const c of this.recentChunks) {
-      if (c.timestamp > this.lastEmittedTime && Date.now() - c.timestamp < 45000) {
+
+    // 1. Gather all chunks from current interviewer turn (since turnStartTime and lastEmittedTime)
+    for (const c of this.interviewerTurnChunks) {
+      if (c.timestamp >= this.turnStartTime && c.timestamp > this.lastEmittedTime) {
         if (chunks.length === 0 || chunks[chunks.length - 1] !== c.text) {
           chunks.push(c.text)
         }
       }
     }
 
+    // 2. Include any pending buffer texts
     for (const bufText of this.transcriptBuffer) {
       if (!chunks.includes(bufText)) {
         chunks.push(bufText)
@@ -178,16 +260,56 @@ export class QuestionDetector extends EventEmitter {
   }
 
   /**
+   * Classify the question category for Glance Mode formatting
+   */
+  public categorizeQuestion(text: string): InterviewQuestionCategory {
+    // 1. Coding / LeetCode
+    if (
+      /\b(write (a|the) (function|code|algorithm|script|query)|implement (a|the)|solve this problem|leetcode|two sum|reverse a linked list|binary search|dsa|time complexity of your code|space complexity of your code|big o)\b/i.test(
+        text
+      )
+    ) {
+      return 'coding'
+    }
+
+    // 2. Behavioral / HR (STAR format)
+    if (
+      /\b(tell me about a (time|situation|project)|describe a (time|situation|challenge)|how do you handle (conflict|pressure|disagreement)|what is your biggest (weakness|strength|failure|achievement)|give me an example of|why do you want to (join|work)|where do you see yourself|why should we hire you|tell me about yourself)\b/i.test(
+        text
+      )
+    ) {
+      return 'behavioral'
+    }
+
+    // 3. Project / Architecture / System Design
+    if (
+      /\b(tech stack|technology stack|architecture|system design|design a|scale|scaling|database schema|postgres|redis|queue|microservice|monolith|funprint|funprinting|trade-offs|tradeoff|how would you architect|load balancer|latency|throughput|caching|kafka|rabbitmq|bullmq|acid)\b/i.test(
+        text
+      )
+    ) {
+      return 'architecture_project'
+    }
+
+    // 4. Conceptual / Verbal
+    return 'conceptual'
+  }
+
+  /**
    * Check for question immediately (early detection) for high-confidence questions.
-   * If a question clause is detected, automatically incorporates all preceding premise / scenario chunks
-   * from the current turn so large scenario questions are never cut off.
+   * If detected, accumulates the entire cumulative turn and binds anaphora.
    */
   checkEarlyDetection(text: string): DetectedQuestion | null {
+    if (this.isCandidateSpeaking) return null
+
     const trimmedText = text.trim()
     if (!trimmedText) return null
 
     // Do not trigger early detection if chunk ends on an incomplete preposition/conjunction
-    if (/\b(in|of|with|for|about|on|at|to|whether|whether the|and|or|because|if|as|that|into|from)\s*$/i.test(trimmedText)) {
+    if (
+      /\b(in|of|with|for|about|on|at|to|whether|whether the|and|or|because|if|as|that|into|from)\s*$/i.test(
+        trimmedText
+      )
+    ) {
       return null
     }
 
@@ -212,53 +334,72 @@ export class QuestionDetector extends EventEmitter {
     }
 
     if (detection && detection.confidence >= this.earlyDetectionThreshold) {
-      const fullQuestionText = this.getFullQuestionText(candidateText)
+      const fullTurnText = this.getFullQuestionText(candidateText)
+      const { boundText, boundContext } = this.resolveAnaphora(candidateText, fullTurnText)
 
-      if (this.isDuplicateOrRecent(fullQuestionText)) {
+      if (this.isDuplicateOrRecent(boundText)) {
         return null
       }
 
+      const category = this.categorizeQuestion(boundText)
+
       console.log(
-        `[QuestionDetector] ⚡ EARLY DETECTION: "${fullQuestionText}" (confidence: ${detection.confidence.toFixed(2)})`
+        `[QuestionDetector] ⚡ EARLY DETECTION [${category}]: "${boundText}" (confidence: ${detection.confidence.toFixed(2)})`
       )
 
       // Clear transcript buffer so subsequent speech starts fresh and utteranceEnd doesn't duplicate
       this.transcriptBuffer = []
-      this.markEmitted(fullQuestionText)
-      return { ...detection, text: fullQuestionText }
+      this.markEmitted(boundText)
+      return {
+        ...detection,
+        text: boundText,
+        category,
+        boundContext
+      }
     }
 
     return null
   }
 
   onUtteranceEnd(): void {
+    if (this.isCandidateSpeaking) return
+
     const bufferText = this.transcriptBuffer.join(' ').trim()
     this.transcriptBuffer = []
 
-    const candidateText = this.getFullQuestionText(bufferText)
-    if (!candidateText) return
+    const fullTurnText = this.getFullQuestionText(bufferText)
+    if (!fullTurnText) return
 
-    let detection = this.evaluateCandidate(candidateText)
+    let detection = this.evaluateCandidate(fullTurnText)
 
     if (!detection || detection.confidence < this.confidenceThreshold) {
-      if (candidateText) {
+      if (fullTurnText) {
         console.log(
-          `[QuestionDetector] Not a question: "${candidateText}" (confidence: ${detection?.confidence.toFixed(2) || '0.00'})`
+          `[QuestionDetector] Not a question: "${fullTurnText}" (confidence: ${detection?.confidence.toFixed(2) || '0.00'})`
         )
       }
       return
     }
 
-    if (this.isDuplicateOrRecent(candidateText)) {
-      console.log(`[QuestionDetector] Skipping utterance end - duplicate or recent: "${candidateText}"`)
+    const { boundText, boundContext } = this.resolveAnaphora(bufferText, fullTurnText)
+
+    if (this.isDuplicateOrRecent(boundText)) {
+      console.log(`[QuestionDetector] Skipping utterance end - duplicate or recent: "${boundText}"`)
       return
     }
 
+    const category = this.categorizeQuestion(boundText)
+
     console.log(
-      `[QuestionDetector] ✓ QUESTION DETECTED: "${candidateText}" (confidence: ${detection.confidence.toFixed(2)})`
+      `[QuestionDetector] ✓ QUESTION DETECTED [${category}]: "${boundText}" (confidence: ${detection.confidence.toFixed(2)})`
     )
-    this.markEmitted(candidateText)
-    this.emit('questionDetected', { ...detection, text: candidateText })
+    this.markEmitted(boundText)
+    this.emit('questionDetected', {
+      ...detection,
+      text: boundText,
+      category,
+      boundContext
+    })
   }
 
   private isDuplicateOrRecent(text: string): boolean {
@@ -401,6 +542,7 @@ export class QuestionDetector extends EventEmitter {
   clearBuffer(): void {
     this.transcriptBuffer = []
     this.recentChunks = []
+    this.interviewerTurnChunks = []
     this.lastEmittedQuestion = ''
     this.lastEmittedTime = 0
   }

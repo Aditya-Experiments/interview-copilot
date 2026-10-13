@@ -10,6 +10,8 @@ export interface DetectedQuestion {
   text: string
   confidence: number
   questionType: 'direct' | 'indirect' | 'rhetorical' | 'unknown'
+  category?: 'architecture_project' | 'behavioral' | 'coding' | 'conceptual' | 'unknown'
+  boundContext?: string
 }
 
 export interface DetectedQuestionFromImage {
@@ -55,6 +57,7 @@ export interface AnswerEntry {
   answer: string
   timestamp: number
   isStreaming: boolean
+  category?: 'architecture_project' | 'behavioral' | 'coding' | 'conceptual' | 'unknown'
 }
 
 export interface Api {
@@ -71,6 +74,8 @@ export interface Api {
   stopCapture: () => Promise<{ success: boolean }>
   getCaptureStatus: () => Promise<boolean>
   sendAudioData: (audioData: ArrayBuffer) => void
+  sendCandidateSpeakingState: (isSpeaking: boolean) => void
+  resetTurnBoundary: () => Promise<{ success: boolean }>
   getAudioSources: () => Promise<AudioSource[]>
 
   // Window controls
@@ -120,6 +125,7 @@ export interface Api {
   onTranscript: (callback: (event: TranscriptEvent) => void) => () => void
   onUtteranceEnd: (callback: () => void) => () => void
   onSpeechStarted: (callback: () => void) => () => void
+  onCandidateSpeaking: (callback: (isSpeaking: boolean) => void) => () => void
   onQuestionDetected: (callback: (question: DetectedQuestion) => void) => () => void
   onAnswerStream: (callback: (chunk: string) => void) => () => void
   onAnswerComplete: (callback: (answer: string) => void) => () => void
@@ -139,6 +145,8 @@ export interface Api {
       message: string
     }) => void
   ) => () => void
+  onTriggerScreenshotSolve: (callback: () => void) => () => void
+  onTriggerStealthClear: (callback: () => void) => () => void
 }
 
 declare global {

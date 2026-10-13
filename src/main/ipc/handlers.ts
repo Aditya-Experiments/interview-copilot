@@ -333,11 +333,22 @@ export function initializeIpcHandlers(window: BrowserWindow): void {
           const earlyDetection = questionDetector.checkEarlyDetection(event.text)
           if (earlyDetection) {
             console.log('Early question detection triggered:', earlyDetection.text)
-            sendAppLog('success', 'Detector', `⚡ Early question detected: "${earlyDetection.text}"`)
+            sendAppLog(
+              'success',
+              'Detector',
+              `⚡ Early question detected [${earlyDetection.category || 'Glance'}]: "${earlyDetection.text}"`
+            )
+            if (earlyDetection.boundContext) {
+              sendAppLog('info', 'Anaphora', earlyDetection.boundContext)
+            }
             mainWindow?.webContents.send('question-detected', earlyDetection)
             try {
-              sendAppLog('info', 'AI', `Streaming answer for: "${earlyDetection.text.slice(0, 50)}..."`)
-              await openaiService.generateAnswer(earlyDetection.text)
+              sendAppLog(
+                'info',
+                'AI',
+                `Streaming [${earlyDetection.category || 'Glance'}] answer for: "${earlyDetection.text.slice(0, 50)}..."`
+              )
+              await openaiService.generateAnswer(earlyDetection.text, earlyDetection.category)
             } catch (error) {
               const errMsg = (error as Error).message
               sendAppLog('error', 'AI', `Answer error: ${errMsg}`)
@@ -373,13 +384,24 @@ export function initializeIpcHandlers(window: BrowserWindow): void {
       // Set up question detector listener ONCE
       questionDetector?.on('questionDetected', async (detection) => {
         console.log('Question detected:', detection.text)
-        sendAppLog('success', 'Detector', `Question detected: "${detection.text}" (${(detection.confidence * 100).toFixed(0)}% conf)`)
+        sendAppLog(
+          'success',
+          'Detector',
+          `Question detected [${detection.category || 'Glance'}]: "${detection.text}" (${(detection.confidence * 100).toFixed(0)}% conf)`
+        )
+        if (detection.boundContext) {
+          sendAppLog('info', 'Anaphora', detection.boundContext)
+        }
         mainWindow?.webContents.send('question-detected', detection)
 
         if (openaiService) {
           try {
-            sendAppLog('info', 'AI', `Streaming answer for: "${detection.text.slice(0, 50)}..."`)
-            await openaiService.generateAnswer(detection.text)
+            sendAppLog(
+              'info',
+              'AI',
+              `Streaming [${detection.category || 'Glance'}] answer for: "${detection.text.slice(0, 50)}..."`
+            )
+            await openaiService.generateAnswer(detection.text, detection.category)
           } catch (error) {
             const errMsg = (error as Error).message
             sendAppLog('error', 'AI', `Answer error: ${errMsg}`)
@@ -434,11 +456,30 @@ export function initializeIpcHandlers(window: BrowserWindow): void {
     return isCapturing
   })
 
-  // Audio data from renderer
+  // Audio data from renderer (Interviewer channel)
   ipcMain.on('audio-data', (_event, audioData: ArrayBuffer) => {
     if (activeSttService && isCapturing) {
       activeSttService.addAudioData(audioData)
     }
+  })
+
+  // Candidate speaking state from renderer (Candidate channel VAD)
+  ipcMain.on('candidate-speaking-state', (_event, isSpeaking: boolean) => {
+    questionDetector?.setCandidateSpeaking(isSpeaking)
+    mainWindow?.webContents.send('candidate-speaking', isSpeaking)
+    if (isSpeaking) {
+      sendAppLog('info', 'Candidate', 'Candidate speaking — question detection paused')
+    } else {
+      questionDetector?.turnBoundaryReset()
+      sendAppLog('info', 'Turn', 'Candidate finished speaking ──> Turn boundary reset (T=0)')
+    }
+  })
+
+  // Explicit turn boundary reset
+  ipcMain.handle('reset-turn-boundary', () => {
+    questionDetector?.turnBoundaryReset()
+    sendAppLog('info', 'Turn', 'Turn boundary reset manually (T=0)')
+    return { success: true }
   })
 
   // Get audio sources for system audio capture
