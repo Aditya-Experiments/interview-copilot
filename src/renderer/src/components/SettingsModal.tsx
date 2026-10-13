@@ -2,11 +2,13 @@ import {
   AlertCircle,
   CheckCircle,
   Coffee,
+  Cpu,
   Eye,
   EyeOff,
   Mic,
   Plus,
   Save,
+  Sparkles,
   Trash2,
   X,
   Zap
@@ -39,6 +41,7 @@ interface KeyListEditorProps {
   title: string
   badge?: string
   badgeColor?: string
+  activeRole?: string
   linkText: string
   linkUrl: string
   description: string
@@ -55,6 +58,7 @@ function KeyListEditor({
   title,
   badge,
   badgeColor = 'text-amber-400 bg-amber-400/10 border-amber-400/20',
+  activeRole,
   linkText,
   linkUrl,
   description,
@@ -94,6 +98,11 @@ function KeyListEditor({
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <label className="text-sm font-semibold text-dark-100">{title}</label>
+          {activeRole && (
+            <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full border text-emerald-400 bg-emerald-400/10 border-emerald-400/30 flex items-center gap-1">
+              ✓ {activeRole}
+            </span>
+          )}
           {badge && (
             <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full border ${badgeColor}`}>
               {badge}
@@ -227,14 +236,16 @@ export function SettingsModal(): React.JSX.Element | null {
 
       const updatedLocalSettings: AppSettings = {
         ...localSettings,
+        sttProvider: localSettings.sttProvider || 'groq',
+        llmProvider: localSettings.llmProvider || 'groq',
         groqApiKeys: cleanGroq,
         geminiApiKeys: cleanGemini,
         openaiApiKeys: cleanOpenAI,
         groqApiKey: primaryGroq,
         geminiApiKey: primaryGemini,
         openaiApiKey: fallbackApiKey,
-        groqModel: localSettings.groqModel || 'llama-3.3-70b-versatile',
-        geminiModel: localSettings.geminiModel || 'gemini-3.5-flash-lite',
+        groqModel: localSettings.groqModel || 'llama-3.1-8b-instant',
+        geminiModel: localSettings.geminiModel || 'gemini-2.5-flash',
         openaiModel: localSettings.openaiModel || 'gpt-4o-mini'
       }
 
@@ -296,18 +307,88 @@ export function SettingsModal(): React.JSX.Element | null {
             </div>
           </div>
 
+          {/* Active AI Engines Selection */}
+          <div className="p-4 rounded-xl bg-gradient-to-br from-blue-950/40 via-dark-800/90 to-dark-800/80 border border-blue-500/20 space-y-4 shadow-lg">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="p-1.5 rounded-lg bg-blue-500/20 text-blue-400">
+                  <Sparkles size={16} />
+                </div>
+                <div>
+                  <h3 className="text-sm font-semibold text-dark-100">Active AI Engines</h3>
+                  <p className="text-[11px] text-dark-400">Choose your default engine for voice transcription and answering</p>
+                </div>
+              </div>
+              <span className="text-[10px] font-medium px-2 py-0.5 rounded-full border text-blue-400 bg-blue-400/10 border-blue-400/20">
+                ⚡ Groq Default
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-1">
+              {/* Voice Transcription Engine */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-dark-300 flex items-center gap-1.5">
+                  <Mic size={13} className="text-amber-400" />
+                  <span>Voice Transcription (STT)</span>
+                </label>
+                <select
+                  value={localSettings.sttProvider || 'groq'}
+                  onChange={(e) => setLocalSettings({ ...localSettings, sttProvider: e.target.value as any })}
+                  className="w-full px-3 py-2 bg-dark-900 border border-dark-600 rounded-lg text-xs text-dark-100 focus:outline-none focus:border-blue-500 transition-colors"
+                >
+                  <option value="groq">⚡ Groq Whisper (Ultra-Fast & Hindi - Default)</option>
+                  <option value="deepgram">Deepgram Nova-2 (Live WebSocket Stream)</option>
+                  <option value="gemini">Google Gemini STT (Free Multimodal)</option>
+                  <option value="openai">OpenAI Whisper (Standard whisper-1)</option>
+                </select>
+                <p className="text-[10px] text-dark-400 leading-tight">
+                  {(localSettings.sttProvider || 'groq') === 'groq' && 'Uses whisper-large-v3 on Groq LPUs. Fast, accurate, handles Hindi & Hinglish.'}
+                  {localSettings.sttProvider === 'deepgram' && 'Uses live WebSocket stream. Low latency word-by-word streaming.'}
+                  {localSettings.sttProvider === 'gemini' && 'Uses Google Gemini multimodal audio recognition.'}
+                  {localSettings.sttProvider === 'openai' && 'Uses official OpenAI whisper-1 endpoint.'}
+                </p>
+              </div>
+
+              {/* AI Answer Generation Engine */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-dark-300 flex items-center gap-1.5">
+                  <Cpu size={13} className="text-blue-400" />
+                  <span>AI Answer Engine (LLM)</span>
+                </label>
+                <select
+                  value={localSettings.llmProvider || 'groq'}
+                  onChange={(e) => setLocalSettings({ ...localSettings, llmProvider: e.target.value as any })}
+                  className="w-full px-3 py-2 bg-dark-900 border border-dark-600 rounded-lg text-xs text-dark-100 focus:outline-none focus:border-blue-500 transition-colors"
+                >
+                  <option value="groq">⚡ Groq LPU (Ultra-Fast ~100ms - Default)</option>
+                  <option value="gemini">Google Gemini (High Quality & Free)</option>
+                  <option value="openai">OpenAI ChatGPT (Official OpenAI)</option>
+                </select>
+                <p className="text-[10px] text-dark-400 leading-tight">
+                  {(localSettings.llmProvider || 'groq') === 'groq' && 'Uses Llama 3.1 8B on Groq LPUs for sub-second answers.'}
+                  {localSettings.llmProvider === 'gemini' && 'Uses Google Gemini 2.5 Flash for smart, free answers.'}
+                  {localSettings.llmProvider === 'openai' && 'Uses GPT-4o Mini or GPT-4o from OpenAI.'}
+                </p>
+              </div>
+            </div>
+          </div>
+
           {/* 1. Groq Section */}
           <KeyListEditor
             title="Groq (LPU Silicon)"
             badge="⚡ Instant ~150ms Speed"
             badgeColor="text-amber-400 bg-amber-400/10 border-amber-400/20"
+            activeRole={[
+              (localSettings.sttProvider || 'groq') === 'groq' ? 'Active STT' : '',
+              (localSettings.llmProvider || 'groq') === 'groq' ? 'Active AI' : ''
+            ].filter(Boolean).join(' & ')}
             linkText="Get Free Groq Key (No Card) →"
             linkUrl="https://console.groq.com/keys"
             description="Ultra-fast LPU inference. Recommended for live job interviews for sub-second answers."
             keys={groqKeys}
             onChange={(keys) => setLocalSettings({ ...localSettings, groqApiKeys: keys })}
             placeholder="gsk_..."
-            modelId={localSettings.groqModel || 'llama-3.3-70b-versatile'}
+            modelId={localSettings.groqModel || 'llama-3.1-8b-instant'}
             onModelChange={(model) => setLocalSettings({ ...localSettings, groqModel: model })}
             modelOptions={GROQ_MODELS}
             modelLabel="Groq Model"
@@ -318,13 +399,17 @@ export function SettingsModal(): React.JSX.Element | null {
             title="Google Gemini"
             badge="100% Free Multimodal"
             badgeColor="text-green-400 bg-green-400/10 border-green-400/20"
+            activeRole={[
+              localSettings.sttProvider === 'gemini' ? 'Active STT' : '',
+              localSettings.llmProvider === 'gemini' ? 'Active AI' : ''
+            ].filter(Boolean).join(' & ')}
             linkText="Get Free Gemini Key →"
             linkUrl="https://aistudio.google.com/app/apikey"
             description="Google AI Studio provides generous free rate limits for Gemini Flash-Lite and Flash models."
             keys={geminiKeys}
             onChange={(keys) => setLocalSettings({ ...localSettings, geminiApiKeys: keys })}
             placeholder="AIza... or AQ..."
-            modelId={localSettings.geminiModel || 'gemini-3.5-flash-lite'}
+            modelId={localSettings.geminiModel || 'gemini-2.5-flash'}
             onModelChange={(model) => setLocalSettings({ ...localSettings, geminiModel: model })}
             modelOptions={GEMINI_MODELS}
             modelLabel="Gemini Model"
@@ -335,6 +420,10 @@ export function SettingsModal(): React.JSX.Element | null {
             title="OpenAI (ChatGPT)"
             badge="Standard API"
             badgeColor="text-blue-400 bg-blue-400/10 border-blue-400/20"
+            activeRole={[
+              localSettings.sttProvider === 'openai' ? 'Active STT' : '',
+              localSettings.llmProvider === 'openai' ? 'Active AI' : ''
+            ].filter(Boolean).join(' & ')}
             linkText="Get OpenAI Key →"
             linkUrl="https://platform.openai.com/api-keys"
             description="Use your OpenAI account with GPT-4o Mini or GPT-4o."
@@ -352,6 +441,11 @@ export function SettingsModal(): React.JSX.Element | null {
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <label className="text-sm font-semibold text-dark-100">Deepgram STT</label>
+                {localSettings.sttProvider === 'deepgram' && (
+                  <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full border text-emerald-400 bg-emerald-400/10 border-emerald-400/30 flex items-center gap-1">
+                    ✓ Active STT
+                  </span>
+                )}
                 <span className="text-[10px] font-medium px-2 py-0.5 rounded-full border text-purple-400 bg-purple-400/10 border-purple-400/20">
                   Nova-2 Live Audio
                 </span>
