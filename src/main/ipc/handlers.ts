@@ -244,6 +244,7 @@ export function initializeIpcHandlers(window: BrowserWindow): void {
 
       // Select STT engine based on user preference (defaults to Groq Whisper)
       const requestedStt = settings.sttProvider || 'groq'
+      const pauseThreshold = Math.max(1200, settings.pauseThreshold || 1500)
       const groqKey = (settings.groqApiKeys && settings.groqApiKeys[0]) || settings.groqApiKey || ''
       const openaiKey = (settings.openaiApiKeys && settings.openaiApiKeys[0]) || (settings.openaiApiKey?.startsWith('sk-') ? settings.openaiApiKey : '')
       const geminiKey = (settings.geminiApiKeys && settings.geminiApiKeys[0]) || settings.geminiApiKey || ''
@@ -252,7 +253,11 @@ export function initializeIpcHandlers(window: BrowserWindow): void {
       if (requestedStt === 'deepgram' && deepgramKey) {
         console.log('===> Using Deepgram Nova-2 live WebSocket streaming')
         sendAppLog('info', 'STT', 'Initializing Deepgram Nova-2 live WebSocket...')
-        deepgramService = new DeepgramService({ apiKey: deepgramKey })
+        deepgramService = new DeepgramService({
+          apiKey: deepgramKey,
+          endpointing: pauseThreshold,
+          utteranceEndMs: pauseThreshold
+        })
         activeSttService = deepgramService
       } else if (requestedStt === 'gemini' && geminiKey) {
         console.log('===> Using Gemini Audio STT')
@@ -277,7 +282,11 @@ export function initializeIpcHandlers(window: BrowserWindow): void {
       } else if (deepgramKey) {
         console.log('===> Using Deepgram Nova-2 (fallback)')
         sendAppLog('info', 'STT', 'Initializing Deepgram Nova-2 (fallback)...')
-        deepgramService = new DeepgramService({ apiKey: deepgramKey })
+        deepgramService = new DeepgramService({
+          apiKey: deepgramKey,
+          endpointing: pauseThreshold,
+          utteranceEndMs: pauseThreshold
+        })
         activeSttService = deepgramService
       } else if (geminiKey) {
         console.log('===> Using Gemini STT (fallback)')
@@ -345,10 +354,10 @@ export function initializeIpcHandlers(window: BrowserWindow): void {
           clearTimeout(utteranceDebounceTimer)
         }
         utteranceDebounceTimer = setTimeout(() => {
-          console.log('[Handlers] ⏱️ True speech pause detected (1400ms silence) ──> Turn complete')
+          console.log(`[Handlers] ⏱️ True speech pause detected (${pauseThreshold}ms silence) ──> Turn complete`)
           sendAppLog('info', 'Audio', 'Utterance pause detected')
           questionDetector?.onUtteranceEnd()
-        }, 1400)
+        }, pauseThreshold)
       })
 
       activeSttService.on('utteranceEnd', () => {
@@ -357,10 +366,11 @@ export function initializeIpcHandlers(window: BrowserWindow): void {
           ? Date.now() - questionDetector.getLastTranscriptTime()
           : 2000
 
-        // Only trigger if there has actually been >= 1200ms of silence.
-        // If words were spoken < 1200ms ago, let the 1400ms debounce timer complete the silence window
+        // Only trigger if there has actually been enough silence.
+        // If words were spoken recently, let the debounce timer complete the silence window
         // so intermediate clause breathing does not chop the question in half.
-        if (timeSinceSpeech >= 1200) {
+        const minSilenceRequired = Math.max(1000, pauseThreshold - 200)
+        if (timeSinceSpeech >= minSilenceRequired) {
           sendAppLog('info', 'Audio', 'Utterance pause detected')
           if (utteranceDebounceTimer) {
             clearTimeout(utteranceDebounceTimer)

@@ -11,6 +11,8 @@ export interface DeepgramConfig {
   apiKey: string
   model?: string
   language?: string
+  endpointing?: number
+  utteranceEndMs?: number
 }
 
 export class DeepgramService extends EventEmitter {
@@ -43,8 +45,8 @@ export class DeepgramService extends EventEmitter {
         channels: 1 as any,
         smart_format: 'true' as any,
         interim_results: 'true' as any,
-        endpointing: 1400 as any,
-        utterance_end_ms: 1500 as any,
+        endpointing: (this.config.endpointing || 1500) as any,
+        utterance_end_ms: (this.config.utteranceEndMs || 1500) as any,
         vad_events: 'true' as any,
         reconnectAttempts: 3
       } as any)
