@@ -624,20 +624,30 @@ export function initializeIpcHandlers(window: BrowserWindow): void {
     }
 
     try {
-      const activeKey =
-        (settings?.groqApiKeys && settings.groqApiKeys[0]) ||
-        (settings?.geminiApiKeys && settings.geminiApiKeys[0]) ||
-        (settings?.openaiApiKeys && settings.openaiApiKeys[0]) ||
-        settings?.openaiApiKey ||
-        ''
+      // Find a vision-capable key (Gemini or OpenAI)
+      const geminiKey =
+        (settings?.geminiApiKeys && settings.geminiApiKeys.find((k) => k && !k.startsWith('gsk_') && !k.startsWith('sk-'))) ||
+        (settings?.geminiApiKey && !settings.geminiApiKey.startsWith('gsk_') && !settings.geminiApiKey.startsWith('sk-') ? settings.geminiApiKey : '')
+      const openaiKey =
+        (settings?.openaiApiKeys && settings.openaiApiKeys.find((k) => k && k.startsWith('sk-'))) ||
+        (settings?.openaiApiKey && settings.openaiApiKey.startsWith('sk-') ? settings.openaiApiKey : '')
 
-      // Initialize services if needed
-      if (!visionService) {
-        visionService = new VisionService({
-          apiKey: activeKey,
-          model: 'gpt-4o'
-        })
+      const visionKey = geminiKey || openaiKey
+
+      if (!visionKey) {
+        const errorMsg = 'Screenshot solving requires a vision-capable AI model. Please add a free Google Gemini API key in Settings (https://aistudio.google.com/app/apikey). Groq provides ultra-fast Voice STT & Answers, but does not support image analysis.'
+        mainWindow?.webContents.send('answer-error', errorMsg)
+        return {
+          success: false,
+          error: errorMsg
+        }
       }
+
+      // Initialize vision service with the actual vision key
+      visionService = new VisionService({
+        apiKey: visionKey,
+        model: openaiKey && !geminiKey ? 'gpt-4o-mini' : undefined
+      })
 
       if (!openaiService) {
         openaiService = new OpenAIService({
