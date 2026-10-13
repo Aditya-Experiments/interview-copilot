@@ -39,6 +39,7 @@ export interface AppSettings {
   pauseThreshold: number
   autoStart: boolean
   resumeDescription: string
+  enableSpeakerSeparation?: boolean
 }
 
 export interface AppLogEntry {
@@ -153,7 +154,8 @@ const DEFAULT_SETTINGS: AppSettings = {
   windowOpacity: 1.0,
   pauseThreshold: 1500,
   autoStart: false,
-  resumeDescription: ''
+  resumeDescription: '',
+  enableSpeakerSeparation: false
 }
 
 export const useInterviewStore = create<InterviewState>((set, get) => ({

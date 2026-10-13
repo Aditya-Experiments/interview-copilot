@@ -77,7 +77,7 @@ export class AudioCaptureService {
    * 1. Interviewer Channel: Captured via desktopCapturer loopback (pure audio from Zoom/Teams/Meet).
    * 2. Candidate Channel: Captured via Microphone for Speaker Separation & Turn Reset.
    */
-  async startSystemAudioCapture(sourceId: string): Promise<void> {
+  async startSystemAudioCapture(sourceId: string, enableSpeakerSeparation = false): Promise<void> {
     if (this.isCapturing) return
 
     try {
@@ -118,11 +118,13 @@ export class AudioCaptureService {
 
       this.sourceNode.connect(this.workletNode)
 
-      // 2. Candidate Channel (Separate Microphone for Speaker Separation)
-      try {
-        await this.startCandidateMicVad()
-      } catch (micErr) {
-        console.warn('Microphone not available for dual-channel separation, falling back to system audio only:', micErr)
+      // 2. Candidate Channel (Separate Microphone for Speaker Separation, only when explicitly enabled)
+      if (enableSpeakerSeparation) {
+        try {
+          await this.startCandidateMicVad()
+        } catch (micErr) {
+          console.warn('Microphone not available for dual-channel separation, falling back to system audio only:', micErr)
+        }
       }
 
       this.isCapturing = true
@@ -134,7 +136,7 @@ export class AudioCaptureService {
 
   /**
    * Initializes Voice Activity Detection (VAD) on the Candidate's microphone.
-   * Prevents candidate speech from triggering AI and resets turn boundary when candidate finishes.
+   * Tracks sustained candidate speech (>3s) to prevent echo bleed and reset turn boundary only upon real answer completion.
    */
   private async startCandidateMicVad(): Promise<void> {
     if (!this.audioContext) return
@@ -156,7 +158,9 @@ export class AudioCaptureService {
     this.candidateSourceNode.connect(this.candidateAnalyser)
 
     const buffer = new Float32Array(this.candidateAnalyser.fftSize)
-    const SPEECH_RMS_THRESHOLD = 0.025 // Voice activity threshold
+    let ambientNoiseFloor = 0.02
+    let calibrationFrames = 0
+    let speechStartTime = 0
 
     this.candidateSpeechFrames = 0
     this.candidateSilenceFrames = 0
@@ -172,13 +176,24 @@ export class AudioCaptureService {
       }
       const rms = Math.sqrt(sum / buffer.length)
 
-      if (rms > SPEECH_RMS_THRESHOLD) {
+      // First 20 frames (~1 sec): calibrate ambient noise
+      if (calibrationFrames < 20) {
+        calibrationFrames++
+        ambientNoiseFloor = Math.max(ambientNoiseFloor, rms)
+        return
+      }
+
+      // Threshold: at least 0.07, or 2.5x ambient noise floor to prevent speaker bleed
+      const threshold = Math.max(0.07, ambientNoiseFloor * 2.5)
+
+      if (rms > threshold) {
         this.candidateSpeechFrames++
         this.candidateSilenceFrames = 0
 
-        // If voice sustained for ~150ms (3 frames of 50ms)
-        if (this.candidateSpeechFrames >= 3 && !this.isCandidateSpeaking) {
+        // Candidate must speak continuously for >= 750ms (15 frames) to count as real speech
+        if (this.candidateSpeechFrames >= 15 && !this.isCandidateSpeaking) {
           this.isCandidateSpeaking = true
+          speechStartTime = Date.now()
           console.log('[AudioCapture] 🎙️ Candidate speaking detected (Microphone active)')
           if (window.api?.sendCandidateSpeakingState) {
             window.api.sendCandidateSpeakingState(true)
@@ -188,12 +203,14 @@ export class AudioCaptureService {
         this.candidateSilenceFrames++
         this.candidateSpeechFrames = 0
 
-        // If candidate silent for ~1000ms (20 frames of 50ms) after speaking
-        if (this.candidateSilenceFrames >= 20 && this.isCandidateSpeaking) {
+        // If candidate silent for ~1250ms (25 frames of 50ms) after sustained speech
+        if (this.candidateSilenceFrames >= 25 && this.isCandidateSpeaking) {
+          const duration = Date.now() - speechStartTime
+          const wasSubstantialAnswer = duration >= 3000 // Only count as completed answer if sustained >= 3s
           this.isCandidateSpeaking = false
-          console.log('[AudioCapture] 🤫 Candidate finished speaking ──> Resetting turn boundary')
+          console.log(`[AudioCapture] 🤫 Candidate finished speaking (${duration}ms, answer: ${wasSubstantialAnswer})`)
           if (window.api?.sendCandidateSpeakingState) {
-            window.api.sendCandidateSpeakingState(false)
+            window.api.sendCandidateSpeakingState(false, wasSubstantialAnswer)
           }
         }
       }

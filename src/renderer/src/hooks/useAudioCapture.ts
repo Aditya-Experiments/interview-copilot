@@ -1,5 +1,6 @@
 import { useCallback, useRef, useState } from 'react'
 import { AudioCaptureService } from '../services/audioCapture'
+import { useInterviewStore } from '../store/interviewStore'
 
 export type AudioSource = 'microphone' | 'system'
 
@@ -60,8 +61,9 @@ export function useAudioCapture(): UseAudioCaptureReturn {
             }
           }
 
-          console.log('Starting system audio capture with source:', targetSourceId)
-          await audioServiceRef.current.startSystemAudioCapture(targetSourceId)
+          const enableSpeakerSeparation = useInterviewStore.getState().settings.enableSpeakerSeparation || false
+          console.log('Starting system audio capture with source:', targetSourceId, 'speaker separation:', enableSpeakerSeparation)
+          await audioServiceRef.current.startSystemAudioCapture(targetSourceId, enableSpeakerSeparation)
         } else {
           console.log('Starting microphone capture')
           await audioServiceRef.current.startMicrophoneCapture()

@@ -539,6 +539,26 @@ export function SettingsModal(): React.JSX.Element | null {
                 className="w-full accent-blue-500"
               />
             </div>
+
+            {/* Dual-Channel Speaker Separation Toggle */}
+            <div className="pt-2 border-t border-dark-700">
+              <label className="flex items-center justify-between cursor-pointer">
+                <div>
+                  <span className="text-xs font-semibold text-dark-200 block">Dual-Channel Speaker Separation (Parakeet)</span>
+                  <span className="text-[11px] text-dark-500 block">
+                    Uses microphone to detect candidate answers hands-free (Headphones recommended). Keep OFF if using laptop speakers.
+                  </span>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={localSettings.enableSpeakerSeparation || false}
+                  onChange={(e) =>
+                    setLocalSettings({ ...localSettings, enableSpeakerSeparation: e.target.checked })
+                  }
+                  className="rounded bg-dark-900 border-dark-600 text-blue-500 focus:ring-0 focus:ring-offset-0 w-4 h-4 ml-3"
+                />
+              </label>
+            </div>
           </div>
         </div>
 

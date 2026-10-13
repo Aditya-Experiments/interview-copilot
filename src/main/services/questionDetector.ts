@@ -90,6 +90,18 @@ const INTERVIEW_PATTERNS = [
   /what was (the outcome|the result|your role)/i,
   /what did you learn from/i,
 
+  // Imperative & architectural interview patterns
+  /\b(explain|walk me through|break down|detail|clarify)\b/i,
+  /explain (the|your|a|an|how|what|why|our|this|that)?\s*(architecture|data flow|flow|design|system|component|implementation|working|pipeline|trade-offs|solution|code|approach|decision)?/i,
+  /walk (me )?through (the|your|a|an|how|what|why|this|that)?\s*(architecture|data flow|flow|design|system|project|solution|code|approach|process)?/i,
+  /describe (the|your|a|an|how|what|why|this|that)?\s*(architecture|data flow|flow|design|system|project|solution|code|approach|process)?/i,
+  /tell me about (the|your|a|an)?\s*(architecture|data flow|project|system|background|experience)/i,
+  /give (me )?(an? )?(overview|explanation|example|breakdown|walkthrough)/i,
+  /how does .+ work/i,
+  /how did you (implement|solve|build|design|handle|architect|approach|scale)/i,
+  /from (the )?(user'?s? )?input to (the )?(final )?output/i,
+  /what (is|was) your (role|responsibility|contribution)/i,
+
   // Hindi & Hinglish interview patterns
   /(अपने बारे में|तुम्हारा परिचय|आपका परिचय|इंट्रोडक्शन|इंट्रो)/i,
   /\b(apne baare mein|apna introduction|tell me about yourself)\b/i,
@@ -104,7 +116,8 @@ const INTERVIEW_TOPICS = [
   /\b(project|projects|architecture|stack|tech stack|frontend|backend|database|framework|api|apis)\b/i,
   /\b(role|company|team|leadership|challenge|conflict|failure|achievement)\b/i,
   /\b(scale|scaling|performance|optimization|algorithm|dsa|system design)\b/i,
-  /\b(resume|cv|career|internship|job|hire|join)\b/i
+  /\b(resume|cv|career|internship|job|hire|join)\b/i,
+  /\b(data flow|dataflow|flow|pipeline|input|output|user input|final output|platform|service|services|production|cloud|server|client|microservices|srs)\b/i
 ]
 
 // Common short phrases to IGNORE (only standalone pleasantries & feedback)
@@ -155,29 +168,38 @@ export class QuestionDetector extends EventEmitter {
 
   /**
    * Called by Dual-Channel audio engine when candidate speaks into mic.
-   * Suppresses false triggers and resets interviewer turn upon completion.
+   * Tracks speaker state for turn context management.
    */
   setCandidateSpeaking(speaking: boolean): void {
     this.isCandidateSpeaking = speaking
   }
 
+  getCandidateSpeaking(): boolean {
+    return this.isCandidateSpeaking
+  }
+
   /**
    * Resets the turn boundary (T=0) when the candidate finishes speaking.
-   * Breathing pauses by the interviewer DO NOT call this.
+   * Preserves recent interviewer speech if candidate noise was transient.
    */
   turnBoundaryReset(): void {
+    const now = Date.now()
+    // Safety guard: If interviewer spoke recently (within last 12s) and no question was answered yet,
+    // preserve the interviewer turn context rather than wiping it out due to transient candidate noise.
+    const hasRecentInterviewerSpeech = this.interviewerTurnChunks.some((c) => now - c.timestamp < 12000)
+    if (hasRecentInterviewerSpeech && (now - this.lastEmittedTime > 12000 || this.lastEmittedTime === 0)) {
+      console.log('[QuestionDetector] 🛡️ Preserving recent interviewer speech despite turn reset request')
+      this.turnStartTime = now
+      return
+    }
+
     console.log('[QuestionDetector] ──> Turn boundary reset: T=0 (Candidate finished speaking)')
-    this.turnStartTime = Date.now()
+    this.turnStartTime = now
     this.interviewerTurnChunks = []
     this.transcriptBuffer = []
   }
 
   addTranscript(text: string, isFinal: boolean): void {
-    // If candidate is actively speaking, ignore to prevent confusing candidate voice with interviewer questions
-    if (this.isCandidateSpeaking) {
-      return
-    }
-
     if (isFinal && text.trim()) {
       const trimmed = text.trim()
       const now = Date.now()
@@ -299,8 +321,6 @@ export class QuestionDetector extends EventEmitter {
    * If detected, accumulates the entire cumulative turn and binds anaphora.
    */
   checkEarlyDetection(text: string): DetectedQuestion | null {
-    if (this.isCandidateSpeaking) return null
-
     const trimmedText = text.trim()
     if (!trimmedText) return null
 
@@ -362,8 +382,6 @@ export class QuestionDetector extends EventEmitter {
   }
 
   onUtteranceEnd(): void {
-    if (this.isCandidateSpeaking) return
-
     const bufferText = this.transcriptBuffer.join(' ').trim()
     this.transcriptBuffer = []
 

@@ -464,14 +464,14 @@ export function initializeIpcHandlers(window: BrowserWindow): void {
   })
 
   // Candidate speaking state from renderer (Candidate channel VAD)
-  ipcMain.on('candidate-speaking-state', (_event, isSpeaking: boolean) => {
+  ipcMain.on('candidate-speaking-state', (_event, isSpeaking: boolean, wasAnswer?: boolean) => {
     questionDetector?.setCandidateSpeaking(isSpeaking)
     mainWindow?.webContents.send('candidate-speaking', isSpeaking)
     if (isSpeaking) {
-      sendAppLog('info', 'Candidate', 'Candidate speaking — question detection paused')
-    } else {
+      sendAppLog('info', 'Candidate', 'Candidate speaking')
+    } else if (wasAnswer) {
       questionDetector?.turnBoundaryReset()
-      sendAppLog('info', 'Turn', 'Candidate finished speaking ──> Turn boundary reset (T=0)')
+      sendAppLog('info', 'Turn', 'Candidate finished answer ──> Turn boundary reset (T=0)')
     }
   })
 
