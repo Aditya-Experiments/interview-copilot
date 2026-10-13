@@ -37,7 +37,7 @@ export class DeepgramService extends EventEmitter {
       this.client = new DeepgramClient({ apiKey })
       this.connection = await this.client.listen.v1.connect({
         model: (this.config.model || 'nova-2') as any,
-        language: (this.config.language || 'en') as any,
+        language: (this.config.language || 'multi') as any,
         encoding: 'linear16' as any,
         sample_rate: 16000 as any,
         channels: 1 as any,
