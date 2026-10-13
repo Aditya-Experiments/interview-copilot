@@ -147,22 +147,27 @@ export class QuestionDetector extends EventEmitter {
   }
 
   /**
-   * Check for question immediately (early detection) for high-confidence questions
-   * Checks both current chunk and stitched text with previous recent chunk
+   * Check for question immediately (early detection) for high-confidence questions.
+   * If a question clause is detected, automatically incorporates all preceding premise / scenario chunks
+   * from the current utterance buffer or recent speech so large scenario questions are never cut off.
    */
   checkEarlyDetection(text: string): DetectedQuestion | null {
     const trimmedText = text.trim()
     if (!trimmedText) return null
 
-    // Check direct candidate
+    // Do not trigger early detection if chunk ends on an incomplete preposition/conjunction
+    if (/\b(in|of|with|for|about|on|at|to|whether|whether the|and|or|because|if|as|that|into|from)\s*$/i.test(trimmedText)) {
+      return null
+    }
+
+    // Check direct candidate for question signals
     let candidateText = trimmedText
     let detection = this.evaluateCandidate(candidateText)
 
     // If candidate text alone is not high confidence, check stitched with previous recent chunk
     if ((!detection || detection.confidence < this.earlyDetectionThreshold) && this.recentChunks.length > 0) {
-      // Find previous chunk (skip current if it was already pushed to recentChunks)
       const prev = this.recentChunks
-        .filter((c) => c.text !== trimmedText && Date.now() - c.timestamp < 5000)
+        .filter((c) => c.text !== trimmedText && Date.now() - c.timestamp < 6000)
         .slice(-1)[0]
 
       if (prev) {
@@ -176,14 +181,43 @@ export class QuestionDetector extends EventEmitter {
     }
 
     if (detection && detection.confidence >= this.earlyDetectionThreshold) {
-      if (this.isDuplicateOrRecent(candidateText)) {
+      // BUILD COMPLETE QUESTION WITH FULL SCENARIO / PREMISE CONTEXT
+      let fullQuestionText = candidateText
+
+      // 1. If transcriptBuffer has multiple chunks from this utterance burst, join all of them!
+      if (this.transcriptBuffer.length > 1) {
+        fullQuestionText = this.transcriptBuffer.join(' ').trim()
+      } else {
+        // 2. If buffer only had 1 chunk, check if there was unemitted premise/setup context
+        // spoken within the last 15 seconds (after the last emitted question)
+        const recentSetup = this.recentChunks
+          .filter(
+            (c) =>
+              c.timestamp > this.lastEmittedTime &&
+              !candidateText.includes(c.text) &&
+              Date.now() - c.timestamp < 15000
+          )
+          .map((c) => c.text)
+          .join(' ')
+          .trim()
+
+        if (recentSetup) {
+          fullQuestionText = `${recentSetup} ${candidateText}`.trim()
+        }
+      }
+
+      if (this.isDuplicateOrRecent(fullQuestionText)) {
         return null
       }
+
       console.log(
-        `[QuestionDetector] ⚡ EARLY DETECTION: "${candidateText}" (confidence: ${detection.confidence.toFixed(2)})`
+        `[QuestionDetector] ⚡ EARLY DETECTION: "${fullQuestionText}" (confidence: ${detection.confidence.toFixed(2)})`
       )
-      this.markEmitted(candidateText)
-      return { ...detection, text: candidateText }
+
+      // Clear transcript buffer so subsequent speech starts fresh and utteranceEnd doesn't duplicate
+      this.transcriptBuffer = []
+      this.markEmitted(fullQuestionText)
+      return { ...detection, text: fullQuestionText }
     }
 
     return null
@@ -193,18 +227,27 @@ export class QuestionDetector extends EventEmitter {
     const fullText = this.transcriptBuffer.join(' ').trim()
     this.transcriptBuffer = []
 
-    let candidateText = fullText
-    let detection = this.evaluateCandidate(candidateText)
+    if (!fullText) return
 
-    // If utterance buffer alone didn't reach confidence, try stitching with last recent chunk
-    if ((!detection || detection.confidence < this.confidenceThreshold) && this.recentChunks.length >= 2) {
-      const lastTwo = this.recentChunks.slice(-2).map((c) => c.text).join(' ')
-      const stitchedDetection = this.evaluateCandidate(lastTwo)
-      if (stitchedDetection && stitchedDetection.confidence >= this.confidenceThreshold) {
-        candidateText = lastTwo
-        detection = stitchedDetection
-      }
+    let candidateText = fullText
+
+    // Check if there was unemitted recent premise context before this utterance in the last 15s
+    const recentSetup = this.recentChunks
+      .filter(
+        (c) =>
+          c.timestamp > this.lastEmittedTime &&
+          !fullText.includes(c.text) &&
+          Date.now() - c.timestamp < 15000
+      )
+      .map((c) => c.text)
+      .join(' ')
+      .trim()
+
+    if (recentSetup) {
+      candidateText = `${recentSetup} ${fullText}`.trim()
     }
+
+    let detection = this.evaluateCandidate(candidateText)
 
     if (!detection || detection.confidence < this.confidenceThreshold) {
       if (candidateText) {
