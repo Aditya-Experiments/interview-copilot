@@ -1,4 +1,4 @@
-import { BrowserWindow, desktopCapturer } from 'electron'
+import { BrowserWindow, desktopCapturer, screen } from 'electron'
 
 export interface ScreenshotResult {
   success: boolean
@@ -7,118 +7,146 @@ export interface ScreenshotResult {
 }
 
 /**
- * Service to capture screenshots of the active window
+ * Service to capture screenshots of the active screen or window
  */
 export class ScreenshotService {
+  private appWindow?: BrowserWindow
   private appWindowTitle?: string
 
   constructor(appWindow?: BrowserWindow) {
-    // Get the app window title to exclude it from capture
+    this.appWindow = appWindow
     if (appWindow) {
       this.appWindowTitle = appWindow.getTitle()
     }
   }
 
+  public setWindow(appWindow: BrowserWindow): void {
+    this.appWindow = appWindow
+    this.appWindowTitle = appWindow.getTitle()
+  }
+
   /**
-   * Captures the currently active/focused window (excluding the AI assistant app)
+   * Captures the screen currently viewed by the user.
+   * Temporarily fades out the Copilot window so it does not obstruct interview questions underneath.
    * @returns Base64 encoded image data URL
    */
   async captureActiveWindow(): Promise<ScreenshotResult> {
+    const win = this.appWindow && !this.appWindow.isDestroyed() ? this.appWindow : null
+    let prevOpacity = 1
+
     try {
-      // Get all available sources (windows and screens)
-      const sources = await desktopCapturer.getSources({
-        types: ['window'],
-        thumbnailSize: { width: 1920, height: 1080 }, // High quality
+      // 1. Temporarily make Copilot transparent so questions underneath are fully visible to vision AI
+      if (win) {
+        prevOpacity = win.getOpacity()
+        win.setOpacity(0)
+        // Wait 80ms for OS compositor (macOS WindowServer / DWM) to repaint background without Copilot
+        await new Promise((resolve) => setTimeout(resolve, 80))
+      }
+
+      // 2. Identify the target display (the display containing the Copilot app or cursor)
+      const targetDisplay = win
+        ? screen.getDisplayMatching(win.getBounds())
+        : screen.getDisplayNearestPoint(screen.getCursorScreenPoint()) || screen.getPrimaryDisplay()
+
+      const scaleFactor = targetDisplay.scaleFactor || 2
+      const captureWidth = Math.round(targetDisplay.bounds.width * scaleFactor)
+      const captureHeight = Math.round(targetDisplay.bounds.height * scaleFactor)
+
+      console.log(`[ScreenshotService] Capturing screen for display: ${targetDisplay.id} (${captureWidth}x${captureHeight})`)
+
+      // 3. Capture screen sources directly - captures what is ACTUALLY in front of user's eyes
+      const screenSources = await desktopCapturer.getSources({
+        types: ['screen'],
+        thumbnailSize: { width: captureWidth, height: captureHeight },
         fetchWindowIcons: false
       })
 
-      if (sources.length === 0) {
-        return {
-          success: false,
-          error: 'No windows available to capture'
+      if (screenSources.length > 0) {
+        // Find matching display or fall back to primary screen
+        const matchingSource =
+          screenSources.find((s) => s.display_id === targetDisplay.id.toString()) ||
+          screenSources[0]
+
+        if (matchingSource && matchingSource.thumbnail && !matchingSource.thumbnail.isEmpty()) {
+          console.log(`[ScreenshotService] Successfully captured screen: ${matchingSource.name}`)
+          return {
+            success: true,
+            imageData: matchingSource.thumbnail.toDataURL()
+          }
         }
       }
 
-      console.log(
-        'Available windows:',
-        sources.map((s) => s.name)
-      )
-
-      // Filter out the AI assistant app window
-      // Common patterns: "Interview Copilot", "interview-copilot", etc.
-      const appWindowPatterns = [
-        'Interview Copilot',
-        'interview-copilot',
-        'interview',
-        'electron',
-        this.appWindowTitle?.toLowerCase() || ''
-      ].filter(Boolean)
-
-      const filteredSources = sources.filter((source) => {
-        const sourceNameLower = source.name.toLowerCase()
-        // Exclude if it matches any app window pattern
-        const isAppWindow = appWindowPatterns.some((pattern) => {
-          if (!pattern) return false
-          return sourceNameLower.includes(pattern) || sourceNameLower === pattern
-        })
-
-        // Also exclude if it's clearly an Electron dev window
-        const isElectronDev =
-          sourceNameLower.includes('electron') &&
-          (sourceNameLower.includes('devtools') || sourceNameLower.includes('dev tools'))
-
-        return !isAppWindow && !isElectronDev
+      // 4. Fallback if screen sources are empty: Query individual windows
+      console.warn('[ScreenshotService] Screen sources empty, falling back to window capture...')
+      const windowSources = await desktopCapturer.getSources({
+        types: ['window'],
+        thumbnailSize: { width: 1920, height: 1080 },
+        fetchWindowIcons: false
       })
 
-      if (filteredSources.length === 0) {
-        return {
-          success: false,
-          error:
-            'No other windows available to capture. Please open a browser or another application.'
-        }
-      }
-
-      // Prioritize browser windows
-      const browserKeywords = ['chrome', 'edge', 'firefox', 'safari', 'opera', 'brave', 'browser']
-      const browserSource = filteredSources.find((source) => {
-        const nameLower = source.name.toLowerCase()
-        return browserKeywords.some((keyword) => nameLower.includes(keyword))
+      // Exclude Copilot app and electron devtools
+      const winTitle = this.appWindowTitle?.toLowerCase() || ''
+      const filteredSources = windowSources.filter((s) => {
+        const name = s.name.toLowerCase()
+        return (
+          !name.includes('interview copilot') &&
+          !name.includes('interview-copilot') &&
+          !name.includes('electron') &&
+          (!winTitle || !name.includes(winTitle))
+        )
       })
 
-      // If we found a browser, use it; otherwise use the first non-app window
-      const activeSource = browserSource || filteredSources[0]
+      // Exclude background chat and media apps (WhatsApp, Telegram, Discord, Slack, Spotify, etc.)
+      const nonChatSources = filteredSources.filter((s) => {
+        const name = s.name.toLowerCase()
+        return (
+          !name.includes('whatsapp') &&
+          !name.includes('telegram') &&
+          !name.includes('discord') &&
+          !name.includes('slack') &&
+          !name.includes('spotify')
+        )
+      })
 
-      console.log('Capturing window:', activeSource.name)
+      // Prioritize active browsers or test portals
+      const browserKeywords = ['chrome', 'edge', 'firefox', 'safari', 'opera', 'brave', 'interview', 'test', 'practice']
+      const bestCandidate =
+        nonChatSources.find((s) => {
+          const name = s.name.toLowerCase()
+          return browserKeywords.some((k) => name.includes(k))
+        }) ||
+        nonChatSources[0] ||
+        filteredSources[0]
 
-      if (!activeSource || !activeSource.thumbnail) {
+      if (bestCandidate && bestCandidate.thumbnail && !bestCandidate.thumbnail.isEmpty()) {
+        console.log(`[ScreenshotService] Captured fallback window: ${bestCandidate.name}`)
         return {
-          success: false,
-          error: 'Failed to capture window thumbnail'
+          success: true,
+          imageData: bestCandidate.thumbnail.toDataURL()
         }
       }
-
-      // Convert native image to base64 data URL
-      const image = activeSource.thumbnail
-      const imageDataUrl = image.toDataURL()
 
       return {
-        success: true,
-        imageData: imageDataUrl
+        success: false,
+        error: 'No active display or window found to capture.'
       }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred'
-      console.error('Screenshot capture error:', errorMessage)
+      console.error('[ScreenshotService] Screenshot capture error:', errorMessage)
       return {
         success: false,
         error: errorMessage
+      }
+    } finally {
+      // Always restore Copilot window opacity immediately
+      if (win && !win.isDestroyed()) {
+        win.setOpacity(prevOpacity)
       }
     }
   }
 
   /**
    * Captures a specific window by name
-   * @param windowName Name or partial name of the window to capture
-   * @returns Base64 encoded image data URL
    */
   async captureWindowByName(windowName: string): Promise<ScreenshotResult> {
     try {
@@ -139,16 +167,13 @@ export class ScreenshotService {
         }
       }
 
-      const image = matchingSource.thumbnail
-      const imageDataUrl = image.toDataURL()
-
       return {
         success: true,
-        imageData: imageDataUrl
+        imageData: matchingSource.thumbnail.toDataURL()
       }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred'
-      console.error('Screenshot capture error:', errorMessage)
+      console.error('[ScreenshotService] Error capturing window by name:', errorMessage)
       return {
         success: false,
         error: errorMessage
@@ -156,3 +181,4 @@ export class ScreenshotService {
     }
   }
 }
+

@@ -557,6 +557,8 @@ export function initializeIpcHandlers(window: BrowserWindow): void {
     try {
       if (!screenshotService) {
         screenshotService = new ScreenshotService(mainWindow || undefined)
+      } else if (mainWindow) {
+        screenshotService.setWindow(mainWindow)
       }
 
       const result = await screenshotService.captureActiveWindow()
