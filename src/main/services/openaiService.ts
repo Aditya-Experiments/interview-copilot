@@ -218,7 +218,7 @@ export class OpenAIService extends EventEmitter {
       attempts.push({
         provider: 'groq',
         key,
-        model: this.config.groqModel || this.config.model || 'llama-3.3-70b-versatile',
+        model: this.config.groqModel || this.config.model || 'qwen/qwen3.6-27b',
         index: idx + 1
       })
     })

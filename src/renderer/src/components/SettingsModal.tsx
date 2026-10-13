@@ -20,9 +20,9 @@ interface ModelOption {
 }
 
 const GROQ_MODELS: ModelOption[] = [
-  { id: 'llama-3.3-70b-versatile', name: 'Llama 3.3 70B Versatile (Recommended - Groq LPU)' },
-  { id: 'llama-3.1-8b-instant', name: 'Llama 3.1 8B Instant (Ultra Fast - Groq LPU)' },
-  { id: 'meta-llama/llama-4-scout-17b-16e-instruct', name: 'Llama 4 Scout (Groq LPU)' }
+  { id: 'qwen/qwen3.6-27b', name: 'Qwen 3.6 27B (Recommended - Fast & Multilingual)' },
+  { id: 'openai/gpt-oss-120b', name: 'GPT-OSS 120B (Most Capable)' },
+  { id: 'deepseek-r1-distill-llama-70b', name: 'DeepSeek R1 70B (Reasoning)' }
 ]
 
 const GEMINI_MODELS: ModelOption[] = [
@@ -236,7 +236,7 @@ export function SettingsModal(): React.JSX.Element | null {
         groqApiKey: primaryGroq,
         geminiApiKey: primaryGemini,
         openaiApiKey: fallbackApiKey,
-        groqModel: localSettings.groqModel || 'llama-3.3-70b-versatile',
+        groqModel: localSettings.groqModel || 'qwen/qwen3.6-27b',
         geminiModel: localSettings.geminiModel || 'gemini-3.5-flash-lite',
         openaiModel: localSettings.openaiModel || 'gpt-4o-mini'
       }
@@ -310,7 +310,7 @@ export function SettingsModal(): React.JSX.Element | null {
             keys={groqKeys}
             onChange={(keys) => setLocalSettings({ ...localSettings, groqApiKeys: keys })}
             placeholder="gsk_..."
-            modelId={localSettings.groqModel || 'llama-3.3-70b-versatile'}
+            modelId={localSettings.groqModel || 'qwen/qwen3.6-27b'}
             onModelChange={(model) => setLocalSettings({ ...localSettings, groqModel: model })}
             modelOptions={GROQ_MODELS}
             modelLabel="Groq Model"

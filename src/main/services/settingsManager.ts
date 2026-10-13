@@ -49,8 +49,8 @@ const DEFAULT_SETTINGS: AppSettings = {
     process.env.VITE_GEMINI_MODEL ||
     process.env.OPENAI_MODEL ||
     process.env.VITE_OPENAI_MODEL ||
-    'llama-3.3-70b-versatile',
-  groqModel: 'llama-3.3-70b-versatile',
+    'qwen/qwen3.6-27b',
+  groqModel: 'qwen/qwen3.6-27b',
   geminiModel: 'gemini-3.5-flash-lite',
   deepgramApiKey: getEnvApiKey('DEEPGRAM_API_KEY') || '',
   alwaysOnTop: true,

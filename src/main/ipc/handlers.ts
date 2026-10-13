@@ -111,9 +111,9 @@ export function initializeIpcHandlers(window: BrowserWindow): void {
       // Handle Groq API Keys (starts with gsk_)
       if (trimmedKey.startsWith('gsk_')) {
         const defaultGroqModels = [
-          { id: 'llama-3.3-70b-versatile', name: 'Llama 3.3 70B Versatile (Groq LPU - Fastest & Free)' },
-          { id: 'llama-3.1-8b-instant', name: 'Llama 3.1 8B Instant (Groq LPU - Ultra Fast)' },
-          { id: 'llama-3.2-11b-vision-preview', name: 'Llama 3.2 11B Vision (Groq LPU - Free)' }
+          { id: 'qwen/qwen3.6-27b', name: 'Qwen 3.6 27B (Groq LPU - Fast & Multilingual)' },
+          { id: 'openai/gpt-oss-120b', name: 'GPT-OSS 120B (Groq LPU - Most Capable)' },
+          { id: 'deepseek-r1-distill-llama-70b', name: 'DeepSeek R1 70B (Groq LPU - Reasoning)' }
         ]
 
         try {
@@ -124,10 +124,10 @@ export function initializeIpcHandlers(window: BrowserWindow): void {
           })
           const response = await client.models.list()
           const groqModels = response.data
-            .filter((m) => m.id.includes('llama') || m.id.includes('mixtral') || m.id.includes('gemma'))
+            .filter((m) => !m.id.includes('guard') && !m.id.includes('whisper'))
             .map((m) => ({ id: m.id, name: `${m.id} (Groq LPU)` }))
           if (groqModels.length > 0) {
-            const priorityIds = ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'llama-3.2-11b-vision-preview']
+            const priorityIds = ['qwen/qwen3.6-27b', 'openai/gpt-oss-120b', 'deepseek-r1-distill-llama-70b']
             const top = priorityIds
               .map((id) => groqModels.find((m) => m.id === id) || defaultGroqModels.find((m) => m.id === id)!)
               .filter(Boolean)
