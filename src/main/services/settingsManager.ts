@@ -57,9 +57,9 @@ const DEFAULT_SETTINGS: AppSettings = {
     process.env.VITE_GEMINI_MODEL ||
     process.env.OPENAI_MODEL ||
     process.env.VITE_OPENAI_MODEL ||
-    'llama-3.1-8b-instant',
-  groqModel: 'llama-3.1-8b-instant',
-  geminiModel: 'gemini-2.5-flash',
+    'llama-3.3-70b-versatile',
+  groqModel: 'llama-3.3-70b-versatile',
+  geminiModel: 'gemini-3.5-flash-lite',
   deepgramApiKey: getEnvApiKey('DEEPGRAM_API_KEY') || '',
   alwaysOnTop: true,
   windowOpacity: 1.0,
@@ -184,6 +184,13 @@ export class SettingsManager {
         }
         if (savedSettings.deepgramApiKey && !deepgramKeys.includes(savedSettings.deepgramApiKey.trim())) {
           deepgramKeys.push(savedSettings.deepgramApiKey.trim())
+        }
+
+        if (savedSettings.groqModel === 'llama-3.1-8b-instant') {
+          savedSettings.groqModel = 'llama-3.3-70b-versatile'
+        }
+        if (savedSettings.geminiModel === 'gemini-2.5-flash' || savedSettings.geminiModel === 'gemini-2.5-flash-lite') {
+          savedSettings.geminiModel = 'gemini-3.5-flash-lite'
         }
 
         const loaded: AppSettings = {
