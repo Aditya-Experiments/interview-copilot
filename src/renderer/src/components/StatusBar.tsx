@@ -5,7 +5,6 @@ export function StatusBar(): React.JSX.Element {
   const {
     isCapturing,
     isSpeaking,
-    isCandidateSpeaking,
     isGenerating,
     isProcessingScreenshot,
     error,
@@ -21,9 +20,8 @@ export function StatusBar(): React.JSX.Element {
     if (error) return 'Error'
     if (isProcessingScreenshot) return 'Analyzing screenshot...'
     if (isGenerating) return 'Generating Glance answer...'
-    if (isCandidateSpeaking) return 'You are speaking (Candidate channel • AI paused)'
-    if (isSpeaking) return 'Interviewer speaking (Turn window accumulating)'
-    if (isCapturing) return 'Dual-Channel Active (System Loopback + Mic)'
+    if (isSpeaking) return 'Interviewer speaking...'
+    if (isCapturing) return 'System Audio Active (Interviewer Voice Only)'
     return ''
   }
 
@@ -31,7 +29,6 @@ export function StatusBar(): React.JSX.Element {
     if (error) return 'text-red-400'
     if (isProcessingScreenshot) return 'text-orange-400'
     if (isGenerating) return 'text-purple-400'
-    if (isCandidateSpeaking) return 'text-amber-400 font-semibold'
     if (isSpeaking) return 'text-green-400 font-semibold'
     if (isCapturing) return 'text-blue-400'
     return 'text-dark-400'
@@ -53,18 +50,12 @@ export function StatusBar(): React.JSX.Element {
             <div className="relative flex-shrink-0 animate-pulse">
               <Volume2
                 className={`w-4 h-4 ${
-                  isCandidateSpeaking
-                    ? 'text-amber-400'
-                    : isSpeaking
-                    ? 'text-green-400'
-                    : 'text-blue-400'
+                  isSpeaking ? 'text-green-400' : 'text-blue-400'
                 }`}
               />
-              {(isSpeaking || isCandidateSpeaking) && (
+              {isSpeaking && (
                 <span
-                  className={`absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full animate-ping ${
-                    isCandidateSpeaking ? 'bg-amber-400' : 'bg-green-400'
-                  }`}
+                  className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full animate-ping bg-green-400"
                 />
               )}
             </div>

@@ -147,14 +147,24 @@ export class QuestionDetector extends EventEmitter {
   private isExactDuplicate(text: string): boolean {
     if (!this.lastEmittedQuestion) return false
     const now = Date.now()
-    if (now - this.lastEmittedTime > 4000) {
+    if (now - this.lastEmittedTime > 6000) {
       return false
     }
 
     const normCurrent = text.toLowerCase().replace(/[^\p{L}\p{N}]/gu, '')
     const normLast = this.lastEmittedQuestion.toLowerCase().replace(/[^\p{L}\p{N}]/gu, '')
 
-    return Boolean(normCurrent && normLast && normCurrent === normLast)
+    if (!normCurrent || !normLast) return false
+
+    // 1. Exact duplicate match
+    if (normCurrent === normLast) return true
+
+    // 2. Trailing STT echo: Deepgram sends [FINAL] for words already included in previous turn
+    if (normLast.endsWith(normCurrent) || normLast.includes(normCurrent)) {
+      return true
+    }
+
+    return false
   }
 
   private markEmitted(text: string): void {
