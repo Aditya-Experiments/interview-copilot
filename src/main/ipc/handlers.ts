@@ -231,32 +231,35 @@ export function initializeIpcHandlers(window: BrowserWindow): void {
       }
       questionDetector?.removeAllListeners()
 
-      // Choose STT Service: Deepgram Nova-2 if configured, else Whisper/Gemini
-      const useDeepgram = Boolean(settings.deepgramApiKey?.trim())
+      // Choose STT Service: Groq Whisper preferred (best multilingual/Hindi support)
+      // Falls back to Deepgram only if no Groq/OpenAI/Gemini key available
+      const groqKey = (settings.groqApiKeys && settings.groqApiKeys[0]) || settings.groqApiKey || ''
+      const openaiKey = (settings.openaiApiKeys && settings.openaiApiKeys[0]) || (settings.openaiApiKey?.startsWith('sk-') ? settings.openaiApiKey : '')
+      const geminiKey = (settings.geminiApiKeys && settings.geminiApiKeys[0]) || settings.geminiApiKey || settings.openaiApiKey || ''
+      const sttKey = groqKey || openaiKey || geminiKey
+      const hasWhisperKey = Boolean(sttKey)
+      const useDeepgram = !hasWhisperKey && Boolean(settings.deepgramApiKey?.trim())
 
-      if (useDeepgram) {
-        console.log('===> Using Deepgram Nova-2 live WebSocket streaming')
+      if (hasWhisperKey) {
+        const isGroq = Boolean(groqKey)
+        const isOpenAI = !isGroq && Boolean(openaiKey)
+        const sttName = isGroq ? 'Groq Whisper' : isOpenAI ? 'OpenAI Whisper' : 'Gemini STT'
+        console.log(`===> Using ${sttName} audio transcription (multilingual auto-detect)`)
+        sendAppLog('info', 'STT', `Initializing ${sttName} (multilingual)...`)
+        whisperService = new WhisperService({
+          apiKey: sttKey,
+          model: settings.openaiModel
+        })
+        activeSttService = whisperService
+      } else if (useDeepgram) {
+        console.log('===> Using Deepgram Nova-2 live WebSocket streaming (fallback)')
         sendAppLog('info', 'STT', 'Initializing Deepgram Nova-2 live WebSocket...')
         deepgramService = new DeepgramService({
           apiKey: settings.deepgramApiKey!.trim()
         })
         activeSttService = deepgramService
       } else {
-        const groqKey = (settings.groqApiKeys && settings.groqApiKeys[0]) || settings.groqApiKey || ''
-        const openaiKey = (settings.openaiApiKeys && settings.openaiApiKeys[0]) || (settings.openaiApiKey?.startsWith('sk-') ? settings.openaiApiKey : '')
-        const geminiKey = (settings.geminiApiKeys && settings.geminiApiKeys[0]) || settings.geminiApiKey || settings.openaiApiKey || ''
-        const sttKey = groqKey || openaiKey || geminiKey
-        const isGroq = Boolean(groqKey)
-        const isOpenAI = !isGroq && Boolean(openaiKey)
-        const sttName = isGroq ? 'Groq Whisper' : isOpenAI ? 'OpenAI Whisper' : 'Gemini STT'
-        console.log(`===> Using ${sttName} audio transcription`)
-        sendAppLog('info', 'STT', `Initializing ${sttName}...`)
-        whisperService = new WhisperService({
-          apiKey: sttKey,
-          model: settings.openaiModel,
-          language: 'en'
-        })
-        activeSttService = whisperService
+        throw new Error('No STT API key configured. Add a Groq, OpenAI, Gemini, or Deepgram key in Settings.')
       }
 
       // Initialize OpenAI/Groq/Gemini service for answer generation with multi-key failover
