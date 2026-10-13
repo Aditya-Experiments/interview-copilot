@@ -304,11 +304,11 @@ export function initializeIpcHandlers(window: BrowserWindow): void {
             sendAppLog('success', 'Detector', `⚡ Early question detected: "${earlyDetection.text}"`)
             mainWindow?.webContents.send('question-detected', earlyDetection)
             try {
-              sendAppLog('info', 'Gemini', `Streaming answer for: "${earlyDetection.text.slice(0, 50)}..."`)
+              sendAppLog('info', 'AI', `Streaming answer for: "${earlyDetection.text.slice(0, 50)}..."`)
               await openaiService.generateAnswer(earlyDetection.text)
             } catch (error) {
               const errMsg = (error as Error).message
-              sendAppLog('error', 'Gemini', `Answer error: ${errMsg}`)
+              sendAppLog('error', 'AI', `Answer error: ${errMsg}`)
               mainWindow?.webContents.send('answer-error', errMsg)
             }
           }
@@ -346,11 +346,11 @@ export function initializeIpcHandlers(window: BrowserWindow): void {
 
         if (openaiService) {
           try {
-            sendAppLog('info', 'Gemini', `Streaming answer for: "${detection.text.slice(0, 50)}..."`)
+            sendAppLog('info', 'AI', `Streaming answer for: "${detection.text.slice(0, 50)}..."`)
             await openaiService.generateAnswer(detection.text)
           } catch (error) {
             const errMsg = (error as Error).message
-            sendAppLog('error', 'Gemini', `Answer error: ${errMsg}`)
+            sendAppLog('error', 'AI', `Answer error: ${errMsg}`)
             mainWindow?.webContents.send('answer-error', errMsg)
           }
         }

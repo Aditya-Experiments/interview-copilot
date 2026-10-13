@@ -312,13 +312,29 @@ export class OpenAIService extends EventEmitter {
             ...this.conversationHistory
           ]
 
-          const stream = await client.chat.completions.create({
-            model: attempt.model,
-            messages: messages,
-            max_completion_tokens: this.config.maxTokens || 500,
-            temperature: this.config.temperature || 0.7,
-            stream: true
-          })
+          let stream
+          try {
+            stream = await client.chat.completions.create({
+              model: attempt.model,
+              messages: messages,
+              max_completion_tokens: this.config.maxTokens || 500,
+              temperature: this.config.temperature || 0.7,
+              stream: true
+            })
+          } catch (groqModelErr: any) {
+            if (attempt.model !== 'llama-3.1-8b-instant') {
+              console.warn(`Groq model ${attempt.model} failed, immediately retrying with llama-3.1-8b-instant:`, groqModelErr?.message)
+              stream = await client.chat.completions.create({
+                model: 'llama-3.1-8b-instant',
+                messages: messages,
+                max_completion_tokens: this.config.maxTokens || 500,
+                temperature: this.config.temperature || 0.7,
+                stream: true
+              })
+            } else {
+              throw groqModelErr
+            }
+          }
 
           for await (const chunk of stream) {
             const content = chunk.choices[0]?.delta?.content || ''

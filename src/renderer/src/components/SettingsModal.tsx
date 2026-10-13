@@ -20,17 +20,14 @@ interface ModelOption {
 }
 
 const GROQ_MODELS: ModelOption[] = [
-  { id: 'llama-3.3-70b-versatile', name: 'Llama 3.3 70B Versatile (Recommended - Groq LPU)' },
-  { id: 'llama-3.1-8b-instant', name: 'Llama 3.1 8B Instant (Ultra Fast - Groq LPU)' },
-  { id: 'meta-llama/llama-4-scout-17b-16e-instruct', name: 'Llama 4 Scout (Groq LPU)' }
+  { id: 'llama-3.1-8b-instant', name: 'Llama 3.1 8B Instant (Ultra-Fast ~100ms - Recommended)' },
+  { id: 'llama-3.3-70b-versatile', name: 'Llama 3.3 70B Versatile (Large Model - Groq LPU)' }
 ]
 
 const GEMINI_MODELS: ModelOption[] = [
-  { id: 'gemini-3.5-flash-lite', name: 'Gemini 3.5 Flash Lite (Latest & Highest Free Limits)' },
-  { id: 'gemini-3.1-flash-lite', name: 'Gemini 3.1 Flash Lite (Fast & Free)' },
-  { id: 'gemini-3.8-flash', name: 'Gemini 3.8 Flash (Free)' },
-  { id: 'gemini-2.5-flash-lite', name: 'Gemini 2.5 Flash Lite (Free)' },
-  { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash (Free)' }
+  { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash (Recommended - Fast & Free)' },
+  { id: 'gemini-2.5-flash-lite', name: 'Gemini 2.5 Flash Lite (Ultra-Low Latency)' },
+  { id: 'gemini-1.5-flash', name: 'Gemini 1.5 Flash (Free Tier)' }
 ]
 
 const OPENAI_MODELS: ModelOption[] = [
