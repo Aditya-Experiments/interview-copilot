@@ -35,6 +35,8 @@ Use this context naturally if relevant. Speak in the first person ("I built...",
     : ''
 }
 
+LANGUAGE: The interviewer may ask questions in Hindi, Hinglish, or any language. Understand the intent fully regardless of language, but ALWAYS respond in clear English.
+
 CORE GOAL: Generate answers that are SIMPLE, HUMAN, and VERY EASY TO SPEAK OUT LOUD in a live interview.
 
 SPEAKING & VOCABULARY RULES:
