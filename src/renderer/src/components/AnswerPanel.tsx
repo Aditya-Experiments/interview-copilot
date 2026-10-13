@@ -164,10 +164,10 @@ export function AnswerPanel(): React.JSX.Element {
                 )}
                 <div className="p-3">
                   {currentAnswer ? (
-                    <p className="text-sm text-dark-100 leading-relaxed whitespace-pre-wrap font-sans">
-                      {currentAnswer}
+                    <div>
+                      <MarkdownRenderer content={currentAnswer} />
                       <span className="inline-block w-0.5 h-4 bg-purple-400 ml-1 animate-pulse" />
-                    </p>
+                    </div>
                   ) : (
                     <div className="flex items-center gap-2 text-sm text-purple-400">
                       <div className="flex gap-1">

@@ -73,12 +73,15 @@ export function MarkdownRenderer({ content }: MarkdownRendererProps): React.JSX.
           ),
           // Paragraphs
           p: ({ ...props }) => (
-            <p className="text-sm text-dark-100 leading-relaxed mb-2 last:mb-0" {...props} />
+            <p
+              className="text-sm text-dark-100 leading-relaxed mb-2 last:mb-0 first-of-type:text-[14.5px] first-of-type:font-medium first-of-type:text-blue-100 first-of-type:leading-snug"
+              {...props}
+            />
           ),
           // Lists
           ul: ({ ...props }) => (
             <ul
-              className="list-disc list-inside text-sm text-dark-100 mb-2 space-y-1 ml-4"
+              className="list-disc list-inside text-sm text-dark-100 mb-2 space-y-1.5 ml-2"
               {...props}
             />
           ),
@@ -135,7 +138,7 @@ export function MarkdownRenderer({ content }: MarkdownRendererProps): React.JSX.
           // Horizontal rule
           hr: ({ ...props }) => <hr className="my-3 border-dark-700/50" {...props} />,
           // Strong/Bold
-          strong: ({ ...props }) => <strong className="font-semibold text-dark-100" {...props} />,
+          strong: ({ ...props }) => <strong className="font-semibold text-emerald-300" {...props} />,
           // Emphasis/Italic
           em: ({ ...props }) => <em className="italic text-dark-200" {...props} />,
           // Tables
