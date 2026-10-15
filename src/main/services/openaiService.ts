@@ -87,20 +87,31 @@ SPOKEN PARAGRAPH FORMATTING RULES (READ-OUT-LOUD VERBATIM):
      2–3 short paragraphs as described above (30–50 seconds total speaking time).
    - BEHAVIORAL QUESTIONS:
      2–3 spoken narrative paragraphs (Situation & Task -> Specific Actions with bold verbs -> Measurable Outcome).
-   - CODING / DSA QUESTIONS:
-     1 spoken approach paragraph + clean syntax-highlighted code block + 1 spoken complexity sentence.
+   - CODING / DSA / LEETCODE QUESTIONS:
+     - 1 spoken approach paragraph (1–2 sentences explaining intuition & optimal data structures).
+     - Followed by a clean, optimal syntax-highlighted code block in C++ (modern C++17/C++20 using standard STL like vector, unordered_map, unordered_set, priority_queue, stack, etc.). Do NOT use any other language unless explicitly requested. Include brief clean inline comments for key logic.
+     - 1 spoken complexity sentence on the final line (e.g., **Time Complexity:** O(N), **Space Complexity:** O(1)).
 
-4. NATURAL SPOKEN CONSTRAINTS:
+4. LEETCODE & CODING LANGUAGE REQUIREMENT:
+   - For all coding problems, algorithms, data structures, and LeetCode questions, you MUST write the code solution in C++ (C++17/C++20 standard).
+   - Use standard C++ headers and idioms (e.g., vector, unordered_map, string, queue, algorithm, climits).
+   - Write modern, production-grade C++ with optimal time and space complexity.
+
+5. NATURAL SPOKEN CONSTRAINTS:
    - ZERO AI filler ("Sure!", "That's a great question", "Certainly", "In conclusion"). Jump straight into the first spoken sentence.
    - Write for the ear: short, punchy clauses (8–14 words) that are easy to speak naturally while looking at the camera.
    - Always answer in crisp, professional English regardless of whether the interviewer spoke in English, Hindi, or Hinglish.`
 }
 
 const getSolutionSystemPrompt = (
-  _questionType?: 'leetcode' | 'system-design' | 'other',
+  questionType?: 'leetcode' | 'system-design' | 'other',
   resumeDescription?: string
 ): string => {
-  return getGlanceModeSystemPrompt(resumeDescription)
+  const basePrompt = getGlanceModeSystemPrompt(resumeDescription)
+  if (questionType === 'leetcode') {
+    return `${basePrompt}\n\nLEETCODE INSTRUCTION: You MUST provide the complete, optimal code implementation in C++ (C++17/C++20). Use modern C++ STL structures and write clean, competitive-programming/interview-ready C++ code.`
+  }
+  return basePrompt
 }
 
 interface ProviderAttempt {
@@ -726,10 +737,10 @@ export class OpenAIService extends EventEmitter {
 
     const promptText = questionText
       ? isExplicitCoding
-        ? `Here is the coding problem: "${questionText}"\n\nExplain your approach briefly, provide the clean code solution, and state time/space complexity.`
+        ? `Here is the coding problem: "${questionText}"\n\nExplain your approach briefly in 1-2 spoken sentences, provide the clean, optimal code solution in C++ (modern C++17/C++20 STL), and state time/space complexity.`
         : `Here is the interview question: "${questionText}"\n\nProvide a concise, speakable answer in bullet points with bold keywords. STRICTLY DO NOT generate code blocks unless code was explicitly requested.`
       : `Analyze this screenshot carefully. Extract the interview question or problem statement from the image.
-If it is a coding/algorithm problem asking to write code, provide the approach and clean code.
+If it is a coding/algorithm/LeetCode problem asking to write code, provide the approach and clean, optimal code solution in C++ (modern C++17/C++20 STL), followed by time and space complexity.
 If it is a project, conceptual, situational, or multiple-choice question, provide a concise, speakable answer in bullet points—STRICTLY DO NOT generate code blocks.`
 
     let lastError: unknown = null
