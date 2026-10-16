@@ -147,23 +147,49 @@ export function initializeIpcHandlers(window: BrowserWindow): void {
         return { success: true, models: defaultGroqModels }
       }
 
-      // Handle OpenAI API Keys (starts with sk-)
-      if (trimmedKey.startsWith('sk-')) {
+      // Handle OpenAI / GitHub Models API Keys (sk-, ghp_, github_pat_)
+      if (
+        trimmedKey.startsWith('sk-') ||
+        trimmedKey.startsWith('ghp_') ||
+        trimmedKey.startsWith('github_pat_')
+      ) {
+        const isGitHub = trimmedKey.startsWith('ghp_') || trimmedKey.startsWith('github_pat_')
         const OpenAI = (await import('openai')).default
-        const client = new OpenAI({ apiKey: trimmedKey })
-        const response = await client.models.list()
-        const chatModels = response.data
-          .filter((model) => model.id.includes('gpt'))
-          .map((model) => ({
-            id: model.id,
-            name: model.id
-          }))
+        const client = new OpenAI({
+          apiKey: trimmedKey,
+          baseURL: isGitHub ? 'https://models.inference.ai.azure.com' : undefined
+        })
+        const defaultModels = isGitHub
+          ? [
+              { id: 'gpt-4o', name: 'GPT-4o (Flagship - Free on GitHub)' },
+              { id: 'gpt-4o-mini', name: 'GPT-4o Mini (Fast & Smart - Free on GitHub)' },
+              { id: 'o1-mini', name: 'o1-mini (Top Reasoning & LeetCode - Free on GitHub)' },
+              { id: 'o3-mini', name: 'o3-mini (Next-Gen Reasoning - Free on GitHub)' }
+            ]
+          : [
+              { id: 'gpt-4o-mini', name: 'GPT-4o Mini (OpenAI)' },
+              { id: 'gpt-4o', name: 'GPT-4o (OpenAI)' },
+              { id: 'o1-mini', name: 'o1-mini (OpenAI Reasoning)' },
+              { id: 'o3-mini', name: 'o3-mini (OpenAI Reasoning)' }
+            ]
+
+        try {
+          const response = await client.models.list()
+          const chatModels = response.data
+            .filter((model) => model.id.includes('gpt') || model.id.startsWith('o1') || model.id.startsWith('o3'))
+            .map((model) => ({
+              id: model.id,
+              name: model.id
+            }))
+          if (chatModels.length > 0) {
+            return { success: true, models: chatModels }
+          }
+        } catch {
+          // Fall back to default models list
+        }
         return {
           success: true,
-          models: chatModels.length > 0 ? chatModels : [
-            { id: 'gpt-4o-mini', name: 'GPT-4o Mini (OpenAI)' },
-            { id: 'gpt-4o', name: 'GPT-4o (OpenAI)' }
-          ]
+          models: defaultModels
         }
       }
 

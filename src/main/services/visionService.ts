@@ -23,10 +23,12 @@ export class VisionService {
   constructor(config: VisionServiceConfig) {
     this.config = config
     const key = config.apiKey?.trim() || ''
-    const isGemini = key.startsWith('AIza') || key.startsWith('AQ.') || (!key.startsWith('sk-') && !key.startsWith('gsk_'))
-    if (!isGemini && key.startsWith('sk-')) {
+    const isGitHub = key.startsWith('ghp_') || key.startsWith('github_pat_')
+    const isOpenAI = key.startsWith('sk-')
+    if (isGitHub || isOpenAI) {
       this.client = new OpenAI({
-        apiKey: key
+        apiKey: key,
+        baseURL: isGitHub ? 'https://models.inference.ai.azure.com' : undefined
       })
     }
   }
@@ -45,7 +47,7 @@ export class VisionService {
 
       // Remove data URL prefix if present
       const base64Data = imageBase64.includes(',') ? imageBase64.split(',')[1] : imageBase64
-      const isGemini = key.startsWith('AIza') || key.startsWith('AQ.') || !key.startsWith('sk-')
+      const isGemini = key.startsWith('AIza') || key.startsWith('AQ.') || (!key.startsWith('sk-') && !key.startsWith('ghp_') && !key.startsWith('github_pat_'))
 
       let content = ''
 

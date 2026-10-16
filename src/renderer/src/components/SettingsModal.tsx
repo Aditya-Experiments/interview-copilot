@@ -38,8 +38,10 @@ const GEMINI_MODELS: ModelOption[] = [
 ]
 
 const OPENAI_MODELS: ModelOption[] = [
-  { id: 'gpt-4o-mini', name: 'GPT-4o Mini (OpenAI)' },
-  { id: 'gpt-4o', name: 'GPT-4o (OpenAI)' }
+  { id: 'gpt-4o-mini', name: 'GPT-4o Mini (Fast & Smart - Free on GitHub / OpenAI)' },
+  { id: 'gpt-4o', name: 'GPT-4o (Flagship - Free on GitHub / OpenAI)' },
+  { id: 'o1-mini', name: 'o1-mini (Top Reasoning & LeetCode - Free on GitHub)' },
+  { id: 'o3-mini', name: 'o3-mini (Next-Gen Reasoning - Free on GitHub)' }
 ]
 
 interface KeyListEditorProps {
@@ -420,25 +422,25 @@ export function SettingsModal(): React.JSX.Element | null {
             modelLabel="Gemini Model"
           />
 
-          {/* 3. OpenAI / ChatGPT Section */}
+          {/* 3. OpenAI / ChatGPT & GitHub Models Section */}
           <KeyListEditor
-            title="OpenAI (ChatGPT)"
-            badge="Standard API"
+            title="OpenAI (ChatGPT) & GitHub Models"
+            badge="Official OpenAI or Free GitHub"
             badgeColor="text-blue-400 bg-blue-400/10 border-blue-400/20"
             activeRole={[
               localSettings.sttProvider === 'openai' ? 'Active STT' : '',
               localSettings.llmProvider === 'openai' ? 'Active AI' : ''
             ].filter(Boolean).join(' & ')}
-            linkText="Get OpenAI Key →"
-            linkUrl="https://platform.openai.com/api-keys"
-            description="Use your OpenAI account with GPT-4o Mini or GPT-4o."
+            linkText="Get Free GitHub Token (ghp_...) →"
+            linkUrl="https://github.com/settings/tokens"
+            description="Use your OpenAI key (sk-...) OR free GitHub Personal Access Token (ghp_...) for 100% free GPT-4o, o1-mini, and o3-mini."
             keys={openaiKeys}
             onChange={(keys) => setLocalSettings({ ...localSettings, openaiApiKeys: keys })}
-            placeholder="sk-..."
+            placeholder="sk-... or ghp_..."
             modelId={localSettings.openaiModel || 'gpt-4o-mini'}
             onModelChange={(model) => setLocalSettings({ ...localSettings, openaiModel: model })}
             modelOptions={OPENAI_MODELS}
-            modelLabel="OpenAI Model"
+            modelLabel="OpenAI / GitHub Model"
           />
 
           {/* 4. Deepgram Section */}

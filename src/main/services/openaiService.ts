@@ -17,6 +17,7 @@ export interface OpenAIConfig {
   model?: string
   groqModel?: string
   geminiModel?: string
+  openaiModel?: string
   maxTokens?: number
   temperature?: number
   resumeDescription?: string
@@ -198,19 +199,29 @@ export class OpenAIService extends EventEmitter {
       })
     })
 
-    // 3. OpenAI Keys (ChatGPT)
+    // 3. OpenAI Keys (ChatGPT & GitHub Models)
     const openaiKeys: string[] = []
     if (this.config.openaiApiKeys && Array.isArray(this.config.openaiApiKeys)) {
       for (const k of this.config.openaiApiKeys) {
         if (k && k.trim() && !openaiKeys.includes(k.trim())) openaiKeys.push(k.trim())
       }
     }
-    if (this.config.apiKey?.trim().startsWith('sk-') && !openaiKeys.includes(this.config.apiKey.trim())) {
+    if (
+      this.config.apiKey?.trim() &&
+      (this.config.apiKey.trim().startsWith('sk-') ||
+        this.config.apiKey.trim().startsWith('ghp_') ||
+        this.config.apiKey.trim().startsWith('github_pat_')) &&
+      !openaiKeys.includes(this.config.apiKey.trim())
+    ) {
       openaiKeys.push(this.config.apiKey.trim())
     }
     openaiKeys.forEach((key, idx) => {
-      let oModel = this.config.model || 'gpt-4o-mini'
-      if (!oModel.includes('gpt')) {
+      let oModel = this.config.openaiModel || this.config.model || 'gpt-4o-mini'
+      if (
+        !oModel.includes('gpt') &&
+        !oModel.startsWith('o1') &&
+        !oModel.startsWith('o3')
+      ) {
         oModel = 'gpt-4o-mini'
       }
       openaiAttempts.push({
@@ -575,23 +586,31 @@ export class OpenAIService extends EventEmitter {
             { question, category }
           )
         } else if (attempt.provider === 'openai') {
+          const isGitHub = attempt.key.startsWith('ghp_') || attempt.key.startsWith('github_pat_')
           const client = new OpenAI({
-            apiKey: attempt.key
+            apiKey: attempt.key,
+            baseURL: isGitHub ? 'https://models.inference.ai.azure.com' : undefined
           })
 
+          const isReasoning = attempt.model.startsWith('o1') || attempt.model.startsWith('o3')
           const messages: Message[] = [
-            { role: 'system', content: activeSystemPrompt },
+            { role: isReasoning ? 'user' : 'system', content: activeSystemPrompt },
             ...this.conversationHistory
           ]
 
-          const stream = await client.chat.completions.create(
-            {
-              model: attempt.model,
-              messages: messages,
-              max_completion_tokens: this.config.maxTokens || 1200,
-              temperature: this.config.temperature || 0.7,
-              stream: true
-            },
+          const requestParams: any = {
+            model: attempt.model,
+            messages: messages,
+            max_completion_tokens: this.config.maxTokens || 4096,
+            stream: true
+          }
+
+          if (!isReasoning) {
+            requestParams.temperature = this.config.temperature || 0.7
+          }
+
+          const stream: any = await client.chat.completions.create(
+            requestParams,
             { signal: currentAbortController.signal }
           )
 
@@ -791,9 +810,15 @@ If it is a project, conceptual, situational, or multiple-choice question, provid
             continue
           }
         } else if (attempt.provider === 'openai') {
-          const client = new OpenAI({ apiKey: attempt.key })
+          const isGitHub = attempt.key.startsWith('ghp_') || attempt.key.startsWith('github_pat_')
+          const client = new OpenAI({
+            apiKey: attempt.key,
+            baseURL: isGitHub ? 'https://models.inference.ai.azure.com' : undefined
+          })
+          const isReasoning = attempt.model.startsWith('o1') || attempt.model.startsWith('o3')
+
           const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
-            { role: 'system', content: solutionPrompt },
+            { role: isReasoning ? 'user' : 'system', content: solutionPrompt },
             {
               role: 'user',
               content: [
@@ -806,13 +831,18 @@ If it is a project, conceptual, situational, or multiple-choice question, provid
             }
           ]
 
-          const stream = await client.chat.completions.create({
-            model: 'gpt-4o-mini',
+          const requestParams: any = {
+            model: attempt.model || 'gpt-4o',
             messages: messages,
             max_completion_tokens: this.config.maxTokens || 4096,
-            temperature: this.config.temperature || 0.7,
             stream: true
-          })
+          }
+
+          if (!isReasoning) {
+            requestParams.temperature = this.config.temperature || 0.7
+          }
+
+          const stream: any = await client.chat.completions.create(requestParams)
 
           try {
             for await (const chunk of stream) {
