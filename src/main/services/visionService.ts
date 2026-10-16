@@ -131,8 +131,12 @@ You MUST respond ONLY with valid JSON in this exact format:
 
         content = response.text || ''
       } else {
+        let visionModel = this.config.model || 'gpt-4o'
+        if (visionModel.startsWith('o1-mini') || visionModel.startsWith('o3-mini')) {
+          visionModel = 'gpt-4o'
+        }
         const response = await this.client!.chat.completions.create({
-          model: this.config.model || 'gpt-4o',
+          model: visionModel,
           messages: [
             {
               role: 'system',

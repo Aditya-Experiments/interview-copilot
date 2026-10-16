@@ -60,6 +60,7 @@ export function initializeIpcHandlers(window: BrowserWindow): void {
       updates.groqModel !== undefined ||
       updates.geminiModel !== undefined ||
       updates.llmProvider !== undefined ||
+      updates.visionProvider !== undefined ||
       updates.resumeDescription !== undefined
     ) {
       visionService = null
@@ -70,10 +71,12 @@ export function initializeIpcHandlers(window: BrowserWindow): void {
           openaiApiKeys: updates.openaiApiKeys,
           apiKey: updates.openaiApiKey,
           model: updates.openaiModel,
+          openaiModel: updates.openaiModel,
           groqModel: updates.groqModel,
           geminiModel: updates.geminiModel,
           resumeDescription: updates.resumeDescription,
-          llmProvider: updates.llmProvider
+          llmProvider: updates.llmProvider,
+          visionProvider: updates.visionProvider
         })
       }
     }
@@ -337,10 +340,12 @@ export function initializeIpcHandlers(window: BrowserWindow): void {
         groqApiKey: settings.groqApiKey,
         geminiApiKey: settings.geminiApiKey,
         model: settings.openaiModel,
+        openaiModel: settings.openaiModel,
         groqModel: settings.groqModel || 'qwen/qwen3.8-27b',
         geminiModel: settings.geminiModel || 'gemini-3.5-flash-lite',
         resumeDescription: settings.resumeDescription,
-        llmProvider: settings.llmProvider || 'groq'
+        llmProvider: settings.llmProvider || 'groq',
+        visionProvider: settings.visionProvider || 'gemini'
       })
 
       // Set up OpenAI event listeners ONCE
@@ -723,18 +728,31 @@ export function initializeIpcHandlers(window: BrowserWindow): void {
     }
 
     try {
-      // Find a vision-capable key (Gemini or OpenAI)
+      // Find a vision-capable key (Gemini or OpenAI / GitHub Models)
       const geminiKey =
-        (settings?.geminiApiKeys && settings.geminiApiKeys.find((k) => k && !k.startsWith('gsk_') && !k.startsWith('sk-'))) ||
-        (settings?.geminiApiKey && !settings.geminiApiKey.startsWith('gsk_') && !settings.geminiApiKey.startsWith('sk-') ? settings.geminiApiKey : '')
+        (settings?.geminiApiKeys && settings.geminiApiKeys.find((k) => k && !k.startsWith('gsk_') && !k.startsWith('sk-') && !k.startsWith('ghp_') && !k.startsWith('github_pat_'))) ||
+        (settings?.geminiApiKey && !settings.geminiApiKey.startsWith('gsk_') && !settings.geminiApiKey.startsWith('sk-') && !settings.geminiApiKey.startsWith('ghp_') && !settings.geminiApiKey.startsWith('github_pat_') ? settings.geminiApiKey : '')
       const openaiKey =
-        (settings?.openaiApiKeys && settings.openaiApiKeys.find((k) => k && k.startsWith('sk-'))) ||
-        (settings?.openaiApiKey && settings.openaiApiKey.startsWith('sk-') ? settings.openaiApiKey : '')
+        (settings?.openaiApiKeys && settings.openaiApiKeys.find((k) => k && (k.startsWith('sk-') || k.startsWith('ghp_') || k.startsWith('github_pat_')))) ||
+        (settings?.openaiApiKey && (settings.openaiApiKey.startsWith('sk-') || settings.openaiApiKey.startsWith('ghp_') || settings.openaiApiKey.startsWith('github_pat_')) ? settings.openaiApiKey : '')
 
-      const visionKey = geminiKey || openaiKey
+      const preferredVision = settings?.visionProvider || 'gemini'
+      let visionKey = ''
+      let visionModel: string | undefined = undefined
+
+      if (preferredVision === 'openai' && openaiKey) {
+        visionKey = openaiKey
+        visionModel = settings?.openaiModel || 'gpt-4o'
+      } else if (geminiKey) {
+        visionKey = geminiKey
+        visionModel = settings?.geminiModel || 'gemini-3.8-flash'
+      } else if (openaiKey) {
+        visionKey = openaiKey
+        visionModel = settings?.openaiModel || 'gpt-4o'
+      }
 
       if (!visionKey) {
-        const errorMsg = 'Screenshot solving requires a vision-capable AI model. Please add a free Google Gemini API key in Settings (https://aistudio.google.com/app/apikey). Groq provides ultra-fast Voice STT & Answers, but does not support image analysis.'
+        const errorMsg = 'Screenshot solving requires a vision-capable AI model. Please add a free Google Gemini key or GitHub Token / OpenAI key in Settings.'
         mainWindow?.webContents.send('answer-error', errorMsg)
         return {
           success: false,
@@ -742,10 +760,10 @@ export function initializeIpcHandlers(window: BrowserWindow): void {
         }
       }
 
-      // Initialize vision service with the actual vision key
+      // Initialize vision service with the selected vision key & model
       visionService = new VisionService({
         apiKey: visionKey,
-        model: openaiKey && !geminiKey ? 'gpt-4o-mini' : undefined
+        model: visionModel
       })
 
       if (!openaiService) {
@@ -755,9 +773,12 @@ export function initializeIpcHandlers(window: BrowserWindow): void {
           openaiApiKeys: settings?.openaiApiKeys,
           apiKey: settings?.openaiApiKey,
           model: settings?.openaiModel,
+          openaiModel: settings?.openaiModel,
           groqModel: settings?.groqModel,
           geminiModel: settings?.geminiModel,
-          resumeDescription: settings?.resumeDescription
+          resumeDescription: settings?.resumeDescription,
+          llmProvider: settings?.llmProvider,
+          visionProvider: settings?.visionProvider
         })
 
         // Set up OpenAI event listeners

@@ -20,6 +20,7 @@ export interface AnswerEntry {
 export interface AppSettings {
   sttProvider?: 'groq' | 'deepgram' | 'gemini' | 'openai'
   llmProvider?: 'groq' | 'gemini' | 'openai'
+  visionProvider?: 'gemini' | 'openai'
 
   groqApiKeys?: string[]
   geminiApiKeys?: string[]
@@ -140,6 +141,7 @@ interface InterviewState {
 const DEFAULT_SETTINGS: AppSettings = {
   sttProvider: 'groq',
   llmProvider: 'groq',
+  visionProvider: 'gemini',
   groqApiKeys: [],
   geminiApiKeys: [],
   openaiApiKeys: [],

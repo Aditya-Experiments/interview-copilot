@@ -1,5 +1,6 @@
 import {
   AlertCircle,
+  Camera,
   CheckCircle,
   Coffee,
   Cpu,
@@ -225,7 +226,7 @@ export function SettingsModal(): React.JSX.Element | null {
 
   const openaiKeys = localSettings.openaiApiKeys && localSettings.openaiApiKeys.length > 0
     ? localSettings.openaiApiKeys
-    : (localSettings.openaiApiKey && localSettings.openaiApiKey.startsWith('sk-')) ? [localSettings.openaiApiKey] : ['']
+    : (localSettings.openaiApiKey && (localSettings.openaiApiKey.startsWith('sk-') || localSettings.openaiApiKey.startsWith('ghp_') || localSettings.openaiApiKey.startsWith('github_pat_'))) ? [localSettings.openaiApiKey] : ['']
 
   const handleSave = async (): Promise<void> => {
     try {
@@ -245,6 +246,7 @@ export function SettingsModal(): React.JSX.Element | null {
         ...localSettings,
         sttProvider: localSettings.sttProvider || 'groq',
         llmProvider: localSettings.llmProvider || 'groq',
+        visionProvider: localSettings.visionProvider || 'gemini',
         groqApiKeys: cleanGroq,
         geminiApiKeys: cleanGemini,
         openaiApiKeys: cleanOpenAI,
@@ -331,7 +333,7 @@ export function SettingsModal(): React.JSX.Element | null {
               </span>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-1">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-1">
               {/* Voice Transcription Engine */}
               <div className="space-y-1.5">
                 <label className="text-xs font-medium text-dark-300 flex items-center gap-1.5">
@@ -341,16 +343,16 @@ export function SettingsModal(): React.JSX.Element | null {
                 <select
                   value={localSettings.sttProvider || 'groq'}
                   onChange={(e) => setLocalSettings({ ...localSettings, sttProvider: e.target.value as any })}
-                  className="w-full px-3 py-2 bg-dark-900 border border-dark-600 rounded-lg text-xs text-dark-100 focus:outline-none focus:border-blue-500 transition-colors"
+                  className="w-full px-2.5 py-2 bg-dark-900 border border-dark-600 rounded-lg text-xs text-dark-100 focus:outline-none focus:border-blue-500 transition-colors"
                 >
-                  <option value="groq">⚡ Groq Whisper (Ultra-Fast & Hindi - Default)</option>
-                  <option value="deepgram">Deepgram Nova-2 (Live WebSocket Stream)</option>
-                  <option value="gemini">Google Gemini STT (Free Multimodal)</option>
-                  <option value="openai">OpenAI Whisper (Standard whisper-1)</option>
+                  <option value="groq">⚡ Groq Whisper (Default)</option>
+                  <option value="deepgram">Deepgram Nova-2 (Live)</option>
+                  <option value="gemini">Google Gemini STT</option>
+                  <option value="openai">OpenAI Whisper</option>
                 </select>
                 <p className="text-[10px] text-dark-400 leading-tight">
-                  {(localSettings.sttProvider || 'groq') === 'groq' && 'Uses whisper-large-v3 on Groq LPUs. Fast, accurate, handles Hindi & Hinglish.'}
-                  {localSettings.sttProvider === 'deepgram' && 'Uses live WebSocket stream. Low latency word-by-word streaming.'}
+                  {(localSettings.sttProvider || 'groq') === 'groq' && 'Uses whisper-large-v3 on Groq LPUs for fast speech.'}
+                  {localSettings.sttProvider === 'deepgram' && 'Uses live WebSocket stream with word-by-word streaming.'}
                   {localSettings.sttProvider === 'gemini' && 'Uses Google Gemini multimodal audio recognition.'}
                   {localSettings.sttProvider === 'openai' && 'Uses official OpenAI whisper-1 endpoint.'}
                 </p>
@@ -365,16 +367,36 @@ export function SettingsModal(): React.JSX.Element | null {
                 <select
                   value={localSettings.llmProvider || 'groq'}
                   onChange={(e) => setLocalSettings({ ...localSettings, llmProvider: e.target.value as any })}
-                  className="w-full px-3 py-2 bg-dark-900 border border-dark-600 rounded-lg text-xs text-dark-100 focus:outline-none focus:border-blue-500 transition-colors"
+                  className="w-full px-2.5 py-2 bg-dark-900 border border-dark-600 rounded-lg text-xs text-dark-100 focus:outline-none focus:border-blue-500 transition-colors"
                 >
                   <option value="groq">⚡ Groq LPU (Ultra-Fast ~100ms - Default)</option>
                   <option value="gemini">Google Gemini (High Quality & Free)</option>
-                  <option value="openai">OpenAI ChatGPT (Official OpenAI)</option>
+                  <option value="openai">OpenAI / GitHub Models (Free gpt-4o, o1-mini)</option>
                 </select>
                 <p className="text-[10px] text-dark-400 leading-tight">
                   {(localSettings.llmProvider || 'groq') === 'groq' && 'Uses Llama 3.1 8B on Groq LPUs for sub-second answers.'}
-                  {localSettings.llmProvider === 'gemini' && 'Uses Google Gemini 2.5 Flash for smart, free answers.'}
-                  {localSettings.llmProvider === 'openai' && 'Uses GPT-4o Mini or GPT-4o from OpenAI.'}
+                  {localSettings.llmProvider === 'gemini' && 'Uses Google Gemini 3.8 Flash for smart, free answers.'}
+                  {localSettings.llmProvider === 'openai' && 'Uses GPT-4o, o1-mini, or GPT-4o Mini via OpenAI or free GitHub Models.'}
+                </p>
+              </div>
+
+              {/* Screenshot & LeetCode Vision Engine */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium text-dark-300 flex items-center gap-1.5">
+                  <Camera size={13} className="text-purple-400" />
+                  <span>Screenshot AI (Vision)</span>
+                </label>
+                <select
+                  value={localSettings.visionProvider || 'gemini'}
+                  onChange={(e) => setLocalSettings({ ...localSettings, visionProvider: e.target.value as any })}
+                  className="w-full px-2.5 py-2 bg-dark-900 border border-dark-600 rounded-lg text-xs text-dark-100 focus:outline-none focus:border-blue-500 transition-colors"
+                >
+                  <option value="gemini">Google Gemini (Free - gemini-3.8-flash)</option>
+                  <option value="openai">OpenAI / GitHub Models (Free gpt-4o & o1-mini)</option>
+                </select>
+                <p className="text-[10px] text-dark-400 leading-tight">
+                  {(localSettings.visionProvider || 'gemini') === 'gemini' && 'Uses Google Gemini multimodal vision to solve screenshot questions.'}
+                  {localSettings.visionProvider === 'openai' && 'Uses GPT-4o / o1-mini via OpenAI or free GitHub Models to solve screenshots.'}
                 </p>
               </div>
             </div>
@@ -408,7 +430,8 @@ export function SettingsModal(): React.JSX.Element | null {
             badgeColor="text-green-400 bg-green-400/10 border-green-400/20"
             activeRole={[
               localSettings.sttProvider === 'gemini' ? 'Active STT' : '',
-              localSettings.llmProvider === 'gemini' ? 'Active AI' : ''
+              localSettings.llmProvider === 'gemini' ? 'Active AI' : '',
+              (localSettings.visionProvider || 'gemini') === 'gemini' ? 'Active Vision' : ''
             ].filter(Boolean).join(' & ')}
             linkText="Get Free Gemini Key →"
             linkUrl="https://aistudio.google.com/app/apikey"
@@ -429,7 +452,8 @@ export function SettingsModal(): React.JSX.Element | null {
             badgeColor="text-blue-400 bg-blue-400/10 border-blue-400/20"
             activeRole={[
               localSettings.sttProvider === 'openai' ? 'Active STT' : '',
-              localSettings.llmProvider === 'openai' ? 'Active AI' : ''
+              localSettings.llmProvider === 'openai' ? 'Active AI' : '',
+              localSettings.visionProvider === 'openai' ? 'Active Vision' : ''
             ].filter(Boolean).join(' & ')}
             linkText="Get Free GitHub Token (ghp_...) →"
             linkUrl="https://github.com/settings/tokens"

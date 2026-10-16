@@ -22,6 +22,7 @@ export interface OpenAIConfig {
   temperature?: number
   resumeDescription?: string
   llmProvider?: 'groq' | 'gemini' | 'openai'
+  visionProvider?: 'gemini' | 'openai'
 }
 
 export type QuestionGlanceCategory = 'architecture_project' | 'behavioral' | 'coding' | 'conceptual' | 'unknown'
@@ -147,7 +148,7 @@ export class OpenAIService extends EventEmitter {
     }
   }
 
-  private getProviderAttempts(): ProviderAttempt[] {
+  private getProviderAttempts(override?: 'groq' | 'gemini' | 'openai'): ProviderAttempt[] {
     const groqAttempts: ProviderAttempt[] = []
     const geminiAttempts: ProviderAttempt[] = []
     const openaiAttempts: ProviderAttempt[] = []
@@ -233,11 +234,11 @@ export class OpenAIService extends EventEmitter {
     })
 
     // Order by user preference (default: groq first for maximum speed)
-    const preferred = this.config.llmProvider || 'groq'
+    const preferred = override || this.config.llmProvider || 'groq'
     if (preferred === 'gemini') {
-      return [...geminiAttempts, ...groqAttempts, ...openaiAttempts]
+      return [...geminiAttempts, ...openaiAttempts, ...groqAttempts]
     } else if (preferred === 'openai') {
-      return [...openaiAttempts, ...groqAttempts, ...geminiAttempts]
+      return [...openaiAttempts, ...geminiAttempts, ...groqAttempts]
     } else {
       return [...groqAttempts, ...geminiAttempts, ...openaiAttempts]
     }
@@ -737,7 +738,7 @@ export class OpenAIService extends EventEmitter {
     questionText?: string,
     questionType?: 'leetcode' | 'system-design' | 'other'
   ): Promise<string> {
-    const attempts = this.getProviderAttempts()
+    const attempts = this.getProviderAttempts(this.config.visionProvider || 'gemini')
     if (attempts.length === 0) {
       throw new Error('No API keys configured. Please add an API key in Settings.')
     }
@@ -816,18 +817,28 @@ If it is a project, conceptual, situational, or multiple-choice question, provid
             baseURL: isGitHub ? 'https://models.inference.ai.azure.com' : undefined
           })
           const isReasoning = attempt.model.startsWith('o1') || attempt.model.startsWith('o3')
+          const isTextOnlyReasoning = attempt.model.startsWith('o1-mini') || attempt.model.startsWith('o3-mini')
 
-          const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
-            { role: isReasoning ? 'user' : 'system', content: solutionPrompt },
-            {
-              role: 'user',
-              content: [
+          if (isTextOnlyReasoning && !questionText) {
+            // o1-mini and o3-mini cannot process images directly without extracted text
+            continue
+          }
+
+          const userContent: any = isTextOnlyReasoning
+            ? promptText
+            : [
                 { type: 'text', text: promptText },
                 {
                   type: 'image_url',
                   image_url: { url: `data:image/png;base64,${base64Data}` }
                 }
               ]
+
+          const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
+            { role: isReasoning ? 'user' : 'system', content: solutionPrompt },
+            {
+              role: 'user',
+              content: userContent
             }
           ]
 

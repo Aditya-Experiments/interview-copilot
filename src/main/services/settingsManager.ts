@@ -8,10 +8,12 @@ config()
 
 export type SttProvider = 'groq' | 'deepgram' | 'gemini' | 'openai'
 export type LlmProvider = 'groq' | 'gemini' | 'openai'
+export type VisionProvider = 'gemini' | 'openai'
 
 export interface AppSettings {
   sttProvider?: SttProvider
   llmProvider?: LlmProvider
+  visionProvider?: VisionProvider
 
   groqApiKeys?: string[]
   geminiApiKeys?: string[]
@@ -43,6 +45,7 @@ const getEnvApiKey = (key: string): string => {
 const DEFAULT_SETTINGS: AppSettings = {
   sttProvider: 'groq',
   llmProvider: 'groq',
+  visionProvider: 'gemini',
   groqApiKeys: [],
   geminiApiKeys: [],
   openaiApiKeys: [],
