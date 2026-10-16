@@ -1,4 +1,4 @@
-import { Check, Clock, Copy, Layers, MessageSquare, Mic, Sparkles, Terminal } from 'lucide-react'
+import { Bot, Check, Clock, Copy, Layers, MessageSquare, Mic, Sparkles, Terminal, Zap } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { useInterview } from '../hooks/useInterview'
 import { MarkdownRenderer } from './MarkdownRenderer'
@@ -41,6 +41,35 @@ export function AnswerPanel(): React.JSX.Element {
         console.error('Fallback clipboard copy failed:', fallbackErr)
       }
     }
+  }
+
+  const renderEngineBadge = (text?: string) => {
+    if (!text) return null
+    const match = text.match(/(?:—\s*by|by)\s+(groq|chatgpt|openai|gemini)/i)
+    if (!match) return null
+    const engine = match[1].toLowerCase()
+    if (engine.includes('groq')) {
+      return (
+        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-500/15 text-amber-300 border border-amber-500/30">
+          <Zap className="w-2.5 h-2.5 text-amber-400" /> Groq
+        </span>
+      )
+    }
+    if (engine.includes('chatgpt') || engine.includes('openai')) {
+      return (
+        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
+          <Bot className="w-2.5 h-2.5 text-emerald-400" /> ChatGPT
+        </span>
+      )
+    }
+    if (engine.includes('gemini')) {
+      return (
+        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-blue-500/15 text-blue-300 border border-blue-500/30">
+          <Sparkles className="w-2.5 h-2.5 text-blue-400" /> Gemini
+        </span>
+      )
+    }
+    return null
   }
 
   const renderCategoryBadge = (category?: string) => {
@@ -118,6 +147,7 @@ export function AnswerPanel(): React.JSX.Element {
                     Q: {answer.question}
                   </p>
                   <div className="flex items-center gap-1.5 flex-shrink-0">
+                    {renderEngineBadge(answer.answer)}
                     {renderCategoryBadge(answer.category)}
                     <span className="flex items-center gap-0.5 text-[10px] text-dark-400 font-medium px-1.5 py-0.5 rounded bg-dark-800/60 border border-dark-700/40">
                       <Clock className="w-2.5 h-2.5" />
@@ -158,6 +188,7 @@ export function AnswerPanel(): React.JSX.Element {
                       Q: {currentQuestion}
                     </p>
                     <div className="flex items-center gap-1.5 flex-shrink-0">
+                      {renderEngineBadge(currentAnswer)}
                       {renderCategoryBadge(currentQuestionCategory)}
                     </div>
                   </div>

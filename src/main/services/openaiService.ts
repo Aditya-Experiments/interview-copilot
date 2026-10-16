@@ -102,7 +102,13 @@ SPOKEN PARAGRAPH FORMATTING RULES (READ-OUT-LOUD VERBATIM):
 5. NATURAL SPOKEN CONSTRAINTS:
    - ZERO AI filler ("Sure!", "That's a great question", "Certainly", "In conclusion"). Jump straight into the first spoken sentence.
    - Write for the ear: short, punchy clauses (8–14 words) that are easy to speak naturally while looking at the camera.
-   - Always answer in crisp, professional English regardless of whether the interviewer spoke in English, Hindi, or Hinglish.`
+   - Always answer in crisp, professional English regardless of whether the interviewer spoke in English, Hindi, or Hinglish.
+
+6. ATTRIBUTION SIGNATURE (MANDATORY ON THE FINAL LINE):
+   - At the absolute end of every answer, leave one blank line and write your engine attribution signature in italics:
+     _— by Groq_ (if powered by Groq LPU)
+     _— by ChatGPT_ (if powered by OpenAI / ChatGPT)
+     _— by Gemini_ (if powered by Google Gemini)`
 }
 
 const getSolutionSystemPrompt = (
@@ -518,6 +524,9 @@ export class OpenAIService extends EventEmitter {
       }
 
       const attempt = attempts[i]
+      const engineName =
+        attempt.provider === 'groq' ? 'Groq' : attempt.provider === 'openai' ? 'ChatGPT' : 'Gemini'
+      const attemptSystemPrompt = `${activeSystemPrompt}\n\nSIGNATURE INSTRUCTION: You are powered by ${engineName}. At the absolute end of your entire answer, leave one empty blank line and write your signature in italics: "_— by ${engineName}_".`
 
       try {
         let streamResult: { fullResponse: string; isSuppressed: boolean; wasAborted: boolean }
@@ -529,7 +538,7 @@ export class OpenAIService extends EventEmitter {
           })
 
           const messages: Message[] = [
-            { role: 'system', content: activeSystemPrompt },
+            { role: 'system', content: attemptSystemPrompt },
             ...this.conversationHistory
           ]
 
@@ -595,7 +604,7 @@ export class OpenAIService extends EventEmitter {
 
           const isReasoning = attempt.model.startsWith('o1') || attempt.model.startsWith('o3')
           const messages: Message[] = [
-            { role: isReasoning ? 'user' : 'system', content: activeSystemPrompt },
+            { role: isReasoning ? 'user' : 'system', content: attemptSystemPrompt },
             ...this.conversationHistory
           ]
 
@@ -641,7 +650,7 @@ export class OpenAIService extends EventEmitter {
                 model: targetModel,
                 contents: contents,
                 config: {
-                  systemInstruction: activeSystemPrompt,
+                  systemInstruction: attemptSystemPrompt,
                   maxOutputTokens: this.config.maxTokens || 1200,
                   temperature: this.config.temperature || 0.7,
                   thinkingConfig: {
@@ -654,7 +663,7 @@ export class OpenAIService extends EventEmitter {
                 model: targetModel,
                 contents: contents,
                 config: {
-                  systemInstruction: activeSystemPrompt,
+                  systemInstruction: attemptSystemPrompt,
                   maxOutputTokens: this.config.maxTokens || 1200,
                   temperature: this.config.temperature || 0.7
                 }
@@ -697,6 +706,16 @@ export class OpenAIService extends EventEmitter {
             this.conversationHistory.pop()
           }
           return ''
+        }
+
+        // Guarantee signature attribution exists at the end of the answer
+        if (
+          streamResult.fullResponse &&
+          !/(?:—\s*by|by)\s+(groq|chatgpt|openai|gemini)/i.test(streamResult.fullResponse)
+        ) {
+          const sig = `\n\n_— by ${engineName}_`
+          streamResult.fullResponse += sig
+          this.emit('stream', sig)
         }
 
         // Successfully generated answer
@@ -767,6 +786,9 @@ If it is a project, conceptual, situational, or multiple-choice question, provid
 
     for (let i = 0; i < attempts.length; i++) {
       const attempt = attempts[i]
+      const engineName =
+        attempt.provider === 'groq' ? 'Groq' : attempt.provider === 'openai' ? 'ChatGPT' : 'Gemini'
+      const attemptSolutionPrompt = `${solutionPrompt}\n\nSIGNATURE INSTRUCTION: You are powered by ${engineName}. At the absolute end of your entire answer, leave one empty blank line and write your signature in italics: "_— by ${engineName}_".`
       let fullResponse = ''
 
       try {
@@ -779,7 +801,7 @@ If it is a project, conceptual, situational, or multiple-choice question, provid
             })
 
             const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
-              { role: 'system', content: solutionPrompt },
+              { role: 'system', content: attemptSolutionPrompt },
               { role: 'user', content: promptText }
             ]
 
@@ -838,7 +860,7 @@ If it is a project, conceptual, situational, or multiple-choice question, provid
               ]
 
           const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
-            { role: isReasoning ? 'user' : 'system', content: solutionPrompt },
+            { role: isReasoning ? 'user' : 'system', content: attemptSolutionPrompt },
             {
               role: 'user',
               content: userContent
@@ -892,7 +914,7 @@ If it is a project, conceptual, situational, or multiple-choice question, provid
               }
             ],
             config: {
-              systemInstruction: solutionPrompt,
+              systemInstruction: attemptSolutionPrompt,
               maxOutputTokens: this.config.maxTokens || 4096,
               temperature: this.config.temperature || 0.7
             }
@@ -926,6 +948,16 @@ If it is a project, conceptual, situational, or multiple-choice question, provid
               throw streamErr
             }
           }
+        }
+
+        // Guarantee signature attribution exists at the end of the answer
+        if (
+          fullResponse &&
+          !/(?:—\s*by|by)\s+(groq|chatgpt|openai|gemini)/i.test(fullResponse)
+        ) {
+          const sig = `\n\n_— by ${engineName}_`
+          fullResponse += sig
+          this.emit('stream', sig)
         }
 
         this.emit('complete', fullResponse)

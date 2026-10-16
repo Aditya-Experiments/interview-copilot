@@ -62,6 +62,20 @@ interface MarkdownRendererProps {
   content: string
 }
 
+function extractTextFromReactNode(node: React.ReactNode): string {
+  if (typeof node === 'string' || typeof node === 'number') {
+    return String(node)
+  }
+  if (!node) return ''
+  if (Array.isArray(node)) {
+    return node.map(extractTextFromReactNode).join('')
+  }
+  if (React.isValidElement(node) && (node.props as any)?.children) {
+    return extractTextFromReactNode((node.props as any).children)
+  }
+  return ''
+}
+
 export function MarkdownRenderer({ content }: MarkdownRendererProps): React.JSX.Element {
   const formattedContent = React.useMemo(() => ensureParagraphSeparation(content), [content])
 
@@ -89,12 +103,34 @@ export function MarkdownRenderer({ content }: MarkdownRendererProps): React.JSX.
             <h6 className="text-xs font-medium text-dark-300 mt-2 mb-1 first:mt-0" {...props} />
           ),
           // Paragraphs
-          p: ({ ...props }) => (
-            <p
-              className="text-sm text-dark-100 leading-relaxed mb-4 last:mb-0 first-of-type:text-[14.5px] first-of-type:font-medium first-of-type:text-blue-100 first-of-type:leading-relaxed first-of-type:mb-4"
-              {...props}
-            />
-          ),
+          p: ({ children, ...props }) => {
+            const rawText = extractTextFromReactNode(children).trim()
+            const isSignature = /^(?:—\s*by|by)\s+(groq|chatgpt|openai|gemini)/i.test(rawText)
+
+            if (isSignature) {
+              const engineColor = /groq/i.test(rawText)
+                ? 'bg-amber-400'
+                : /chatgpt|openai/i.test(rawText)
+                  ? 'bg-emerald-400'
+                  : 'bg-blue-400'
+
+              return (
+                <div className="flex items-center gap-1.5 text-xs text-dark-400 font-medium italic mt-3 pt-2.5 border-t border-dark-700/40 select-none">
+                  <span className={`inline-block w-1.5 h-1.5 rounded-full ${engineColor} opacity-80`} />
+                  <span>{rawText.startsWith('—') ? rawText : `— ${rawText}`}</span>
+                </div>
+              )
+            }
+
+            return (
+              <p
+                className="text-sm text-dark-100 leading-relaxed mb-4 last:mb-0 first-of-type:text-[14.5px] first-of-type:font-medium first-of-type:text-blue-100 first-of-type:leading-relaxed first-of-type:mb-4"
+                {...props}
+              >
+                {children}
+              </p>
+            )
+          },
           // Lists
           ul: ({ ...props }) => (
             <ul
