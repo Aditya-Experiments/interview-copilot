@@ -39,10 +39,10 @@ const GEMINI_MODELS: ModelOption[] = [
 ]
 
 const OPENAI_MODELS: ModelOption[] = [
-  { id: 'gpt-4o-mini', name: 'GPT-4o Mini (Fast & Smart - Free on GitHub / OpenAI)' },
-  { id: 'gpt-4o', name: 'GPT-4o (Flagship - Free on GitHub / OpenAI)' },
+  { id: 'gpt-4o-mini', name: 'GPT-4o Mini (Fast & Smart - OpenAI / GitHub Models)' },
+  { id: 'gpt-4o', name: 'GPT-4o (Flagship - OpenAI / GitHub Models)' },
   { id: 'o1-mini', name: 'o1-mini (Top Reasoning & LeetCode - Free on GitHub)' },
-  { id: 'o3-mini', name: 'o3-mini (Next-Gen Reasoning - Free on GitHub)' }
+  { id: 'o3-mini', name: 'o3-mini (Advanced Reasoning - Free on GitHub)' }
 ]
 
 interface KeyListEditorProps {
@@ -391,12 +391,12 @@ export function SettingsModal(): React.JSX.Element | null {
                   onChange={(e) => setLocalSettings({ ...localSettings, visionProvider: e.target.value as any })}
                   className="w-full px-2.5 py-2 bg-dark-900 border border-dark-600 rounded-lg text-xs text-dark-100 focus:outline-none focus:border-blue-500 transition-colors"
                 >
-                  <option value="gemini">Google Gemini (Free - gemini-3.8-flash)</option>
-                  <option value="openai">OpenAI / GitHub Models (Free gpt-4o & o1-mini)</option>
+                  <option value="gemini">Google Gemini (Free - gemini-3.8-flash - Recommended)</option>
+                  <option value="openai">OpenAI Vision (Official OpenAI sk-... key)</option>
                 </select>
                 <p className="text-[10px] text-dark-400 leading-tight">
-                  {(localSettings.visionProvider || 'gemini') === 'gemini' && 'Uses Google Gemini multimodal vision to solve screenshot questions.'}
-                  {localSettings.visionProvider === 'openai' && 'Uses GPT-4o / o1-mini via OpenAI or free GitHub Models to solve screenshots.'}
+                  {(localSettings.visionProvider || 'gemini') === 'gemini' && 'Uses Google Gemini multimodal vision to solve screenshot questions (100% free).'}
+                  {localSettings.visionProvider === 'openai' && 'Uses GPT-4o with official OpenAI key (sk-...). Note: GitHub tokens are text-only models.'}
                 </p>
               </div>
             </div>

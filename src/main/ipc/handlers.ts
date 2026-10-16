@@ -728,7 +728,7 @@ export function initializeIpcHandlers(window: BrowserWindow): void {
     }
 
     try {
-      // Find a vision-capable key (Gemini or OpenAI / GitHub Models)
+      // Find a vision-capable key (Gemini or OpenAI)
       const geminiKey =
         (settings?.geminiApiKeys && settings.geminiApiKeys.find((k) => k && !k.startsWith('gsk_') && !k.startsWith('sk-') && !k.startsWith('ghp_') && !k.startsWith('github_pat_'))) ||
         (settings?.geminiApiKey && !settings.geminiApiKey.startsWith('gsk_') && !settings.geminiApiKey.startsWith('sk-') && !settings.geminiApiKey.startsWith('ghp_') && !settings.geminiApiKey.startsWith('github_pat_') ? settings.geminiApiKey : '')
@@ -737,34 +737,31 @@ export function initializeIpcHandlers(window: BrowserWindow): void {
         (settings?.openaiApiKey && (settings.openaiApiKey.startsWith('sk-') || settings.openaiApiKey.startsWith('ghp_') || settings.openaiApiKey.startsWith('github_pat_')) ? settings.openaiApiKey : '')
 
       const preferredVision = settings?.visionProvider || 'gemini'
-      let visionKey = ''
-      let visionModel: string | undefined = undefined
+      interface VisionAttempt {
+        provider: 'gemini' | 'openai'
+        key: string
+        model: string
+      }
+      const attempts: VisionAttempt[] = []
+      const validOpenaiKey = openaiKey || ''
+      const validGeminiKey = geminiKey || ''
 
-      if (preferredVision === 'openai' && openaiKey) {
-        visionKey = openaiKey
-        visionModel = settings?.openaiModel || 'gpt-4o'
-      } else if (geminiKey) {
-        visionKey = geminiKey
-        visionModel = settings?.geminiModel || 'gemini-3.8-flash'
-      } else if (openaiKey) {
-        visionKey = openaiKey
-        visionModel = settings?.openaiModel || 'gpt-4o'
+      if (preferredVision === 'openai') {
+        if (validOpenaiKey) attempts.push({ provider: 'openai', key: validOpenaiKey, model: settings?.openaiModel || 'gpt-4o-mini' })
+        if (validGeminiKey) attempts.push({ provider: 'gemini', key: validGeminiKey, model: settings?.geminiModel || 'gemini-3.8-flash' })
+      } else {
+        if (validGeminiKey) attempts.push({ provider: 'gemini', key: validGeminiKey, model: settings?.geminiModel || 'gemini-3.8-flash' })
+        if (validOpenaiKey) attempts.push({ provider: 'openai', key: validOpenaiKey, model: settings?.openaiModel || 'gpt-4o-mini' })
       }
 
-      if (!visionKey) {
-        const errorMsg = 'Screenshot solving requires a vision-capable AI model. Please add a free Google Gemini key or GitHub Token / OpenAI key in Settings.'
+      if (attempts.length === 0) {
+        const errorMsg = 'Screenshot solving requires a vision-capable AI model. Please add a Google Gemini key or OpenAI / ChatGPT key in Settings.'
         mainWindow?.webContents.send('answer-error', errorMsg)
         return {
           success: false,
           error: errorMsg
         }
       }
-
-      // Initialize vision service with the selected vision key & model
-      visionService = new VisionService({
-        apiKey: visionKey,
-        model: visionModel
-      })
 
       if (!openaiService) {
         openaiService = new OpenAIService({
@@ -791,9 +788,28 @@ export function initializeIpcHandlers(window: BrowserWindow): void {
         })
       }
 
-      // Analyze screenshot for interview question
+      // Analyze screenshot for interview question with automatic fallback
       console.log('Analyzing screenshot for interview question...')
-      const analysis = await visionService.analyzeScreenshot(imageData)
+      let analysis: any = null
+      let lastVisionErr: Error | null = null
+
+      for (const attempt of attempts) {
+        try {
+          visionService = new VisionService({
+            apiKey: attempt.key,
+            model: attempt.model
+          })
+          analysis = await visionService.analyzeScreenshot(imageData)
+          break
+        } catch (err: any) {
+          lastVisionErr = err
+          console.warn(`Vision attempt with ${attempt.provider} failed (${err?.message || 'unknown'}). Trying fallback...`)
+        }
+      }
+
+      if (!analysis) {
+        throw lastVisionErr || new Error('Screenshot analysis failed on all configured vision providers')
+      }
 
       console.log('Analysis result:', {
         isQuestion: analysis.isQuestion,

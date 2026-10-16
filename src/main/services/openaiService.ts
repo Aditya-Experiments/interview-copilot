@@ -812,15 +812,18 @@ If it is a project, conceptual, situational, or multiple-choice question, provid
           }
         } else if (attempt.provider === 'openai') {
           const isGitHub = attempt.key.startsWith('ghp_') || attempt.key.startsWith('github_pat_')
+          if (isGitHub && !questionText) {
+            // GitHub Models requires extracted text; let Gemini process the raw image
+            continue
+          }
           const client = new OpenAI({
             apiKey: attempt.key,
             baseURL: isGitHub ? 'https://models.inference.ai.azure.com' : undefined
           })
           const isReasoning = attempt.model.startsWith('o1') || attempt.model.startsWith('o3')
-          const isTextOnlyReasoning = attempt.model.startsWith('o1-mini') || attempt.model.startsWith('o3-mini')
+          const isTextOnlyReasoning = isGitHub || attempt.model.startsWith('o1-mini') || attempt.model.startsWith('o3-mini')
 
           if (isTextOnlyReasoning && !questionText) {
-            // o1-mini and o3-mini cannot process images directly without extracted text
             continue
           }
 
