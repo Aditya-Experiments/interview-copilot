@@ -23,10 +23,13 @@ export interface DetectedQuestionFromImage {
   confidence?: number
 }
 
+export type CodingLanguage = 'cpp' | 'python' | 'java'
+
 export interface AppSettings {
   sttProvider?: 'groq' | 'deepgram' | 'gemini' | 'openai'
   llmProvider?: 'groq' | 'gemini' | 'openai'
   visionProvider?: 'gemini' | 'openai'
+  codingLanguage?: CodingLanguage
 
   groqApiKeys?: string[]
   geminiApiKeys?: string[]

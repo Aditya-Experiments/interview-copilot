@@ -17,10 +17,13 @@ export interface AnswerEntry {
   category?: 'architecture_project' | 'behavioral' | 'coding' | 'conceptual' | 'unknown'
 }
 
+export type CodingLanguage = 'cpp' | 'python' | 'java'
+
 export interface AppSettings {
   sttProvider?: 'groq' | 'deepgram' | 'gemini' | 'openai'
   llmProvider?: 'groq' | 'gemini' | 'openai'
   visionProvider?: 'gemini' | 'openai'
+  codingLanguage?: CodingLanguage
 
   groqApiKeys?: string[]
   geminiApiKeys?: string[]
@@ -152,6 +155,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   openaiModel: '',
   groqModel: 'qwen/qwen3.8-27b',
   geminiModel: 'gemini-3.5-flash-lite',
+  codingLanguage: 'cpp',
   deepgramApiKey: '',
   alwaysOnTop: true,
   windowOpacity: 1.0,

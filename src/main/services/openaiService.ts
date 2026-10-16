@@ -23,14 +23,57 @@ export interface OpenAIConfig {
   resumeDescription?: string
   llmProvider?: 'groq' | 'gemini' | 'openai'
   visionProvider?: 'gemini' | 'openai'
+  codingLanguage?: CodingLanguage
+}
+
+export type CodingLanguage = 'cpp' | 'python' | 'java'
+
+export interface CodingLanguageDetails {
+  id: CodingLanguage
+  name: string
+  label: string
+  details: string
+  codeTag: string
+}
+
+export const getCodingLanguagePromptDetails = (lang: CodingLanguage = 'cpp'): CodingLanguageDetails => {
+  switch (lang) {
+    case 'python':
+      return {
+        id: 'python',
+        name: 'Python',
+        label: 'Python (Python 3)',
+        details: 'clean, idiomatic Python 3 using standard libraries like collections, heapq, bisect, etc.',
+        codeTag: 'python'
+      }
+    case 'java':
+      return {
+        id: 'java',
+        name: 'Java',
+        label: 'Java (Java 17+)',
+        details: 'modern Java with standard collections (List, ArrayList, Map, HashMap, Set, Queue, etc.)',
+        codeTag: 'java'
+      }
+    case 'cpp':
+    default:
+      return {
+        id: 'cpp',
+        name: 'C++',
+        label: 'C++ (C++17/C++20)',
+        details: 'modern C++17/C++20 using standard STL like vector, unordered_map, unordered_set, priority_queue, stack, algorithm, etc.',
+        codeTag: 'cpp'
+      }
+  }
 }
 
 export type QuestionGlanceCategory = 'architecture_project' | 'behavioral' | 'coding' | 'conceptual' | 'unknown'
 
 export const getGlanceModeSystemPrompt = (
-  resumeDescription?: string
+  resumeDescription?: string,
+  codingLanguage: CodingLanguage = 'cpp'
 ): string => {
   const resumeText = resumeDescription?.trim() || ''
+  const langConfig = getCodingLanguagePromptDetails(codingLanguage)
 
   return `You are an elite software engineering candidate answering questions live in a real-time interview.
 Your answer is rendered in PARAKEET AI GLANCE MODE—formatted in clean, natural spoken paragraphs that the candidate can READ OUT LOUD VERBATIM to the interviewer without hesitation.
@@ -91,13 +134,13 @@ SPOKEN PARAGRAPH FORMATTING RULES (READ-OUT-LOUD VERBATIM):
      2–3 spoken narrative paragraphs (Situation & Task -> Specific Actions with bold verbs -> Measurable Outcome).
    - CODING / DSA / LEETCODE QUESTIONS:
      - 1 spoken approach paragraph (1–2 sentences explaining intuition & optimal data structures).
-     - Followed by a clean, optimal syntax-highlighted code block in C++ (modern C++17/C++20 using standard STL like vector, unordered_map, unordered_set, priority_queue, stack, etc.). Do NOT use any other language unless explicitly requested. Include brief clean inline comments for key logic.
+     - Followed by a clean, optimal syntax-highlighted code block in ${langConfig.label} (${langConfig.details}). Do NOT use any other language unless explicitly requested. Include brief clean inline comments for key logic.
      - 1 spoken complexity sentence on the final line (e.g., **Time Complexity:** O(N), **Space Complexity:** O(1)).
 
 4. LEETCODE & CODING LANGUAGE REQUIREMENT:
-   - For all coding problems, algorithms, data structures, and LeetCode questions, you MUST write the code solution in C++ (C++17/C++20 standard).
-   - Use standard C++ headers and idioms (e.g., vector, unordered_map, string, queue, algorithm, climits).
-   - Write modern, production-grade C++ with optimal time and space complexity.
+   - For all coding problems, algorithms, data structures, and LeetCode questions, you MUST write the code solution in ${langConfig.label}.
+   - Use standard ${langConfig.name} idioms and standard libraries (${langConfig.details}).
+   - Write modern, production-grade ${langConfig.name} with optimal time and space complexity.
 
 5. NATURAL SPOKEN CONSTRAINTS:
    - ZERO AI filler ("Sure!", "That's a great question", "Certainly", "In conclusion"). Jump straight into the first spoken sentence.
@@ -113,11 +156,13 @@ SPOKEN PARAGRAPH FORMATTING RULES (READ-OUT-LOUD VERBATIM):
 
 const getSolutionSystemPrompt = (
   questionType?: 'leetcode' | 'system-design' | 'other',
-  resumeDescription?: string
+  resumeDescription?: string,
+  codingLanguage: CodingLanguage = 'cpp'
 ): string => {
-  const basePrompt = getGlanceModeSystemPrompt(resumeDescription)
+  const basePrompt = getGlanceModeSystemPrompt(resumeDescription, codingLanguage)
   if (questionType === 'leetcode') {
-    return `${basePrompt}\n\nLEETCODE INSTRUCTION: You MUST provide the complete, optimal code implementation in C++ (C++17/C++20). Use modern C++ STL structures and write clean, competitive-programming/interview-ready C++ code.`
+    const langConfig = getCodingLanguagePromptDetails(codingLanguage)
+    return `${basePrompt}\n\nLEETCODE INSTRUCTION: You MUST provide the complete, optimal code implementation in ${langConfig.label}. Use ${langConfig.details} and write clean, competitive-programming/interview-ready ${langConfig.name} code.`
   }
   return basePrompt
 }
@@ -140,7 +185,10 @@ export class OpenAIService extends EventEmitter {
   constructor(config: OpenAIConfig) {
     super()
     this.config = config
-    this.systemPrompt = getGlanceModeSystemPrompt(config.resumeDescription || '')
+    this.systemPrompt = getGlanceModeSystemPrompt(
+      config.resumeDescription || '',
+      config.codingLanguage || 'cpp'
+    )
   }
 
   /**
@@ -763,7 +811,12 @@ export class OpenAIService extends EventEmitter {
     }
 
     const base64Data = imageBase64.includes(',') ? imageBase64.split(',')[1] : imageBase64
-    const solutionPrompt = getSolutionSystemPrompt(questionType, this.config.resumeDescription)
+    const solutionPrompt = getSolutionSystemPrompt(
+      questionType,
+      this.config.resumeDescription,
+      this.config.codingLanguage || 'cpp'
+    )
+    const langConfig = getCodingLanguagePromptDetails(this.config.codingLanguage || 'cpp')
 
     const isExplicitCoding =
       questionType === 'leetcode' ||
@@ -776,10 +829,10 @@ export class OpenAIService extends EventEmitter {
 
     const promptText = questionText
       ? isExplicitCoding
-        ? `Here is the coding problem: "${questionText}"\n\nExplain your approach briefly in 1-2 spoken sentences, provide the clean, optimal code solution in C++ (modern C++17/C++20 STL), and state time/space complexity.`
+        ? `Here is the coding problem: "${questionText}"\n\nExplain your approach briefly in 1-2 spoken sentences, provide the clean, optimal code solution in ${langConfig.label} (${langConfig.details}), and state time/space complexity.`
         : `Here is the interview question: "${questionText}"\n\nProvide a concise, speakable answer in bullet points with bold keywords. STRICTLY DO NOT generate code blocks unless code was explicitly requested.`
       : `Analyze this screenshot carefully. Extract the interview question or problem statement from the image.
-If it is a coding/algorithm/LeetCode problem asking to write code, provide the approach and clean, optimal code solution in C++ (modern C++17/C++20 STL), followed by time and space complexity.
+If it is a coding/algorithm/LeetCode problem asking to write code, provide the approach and clean, optimal code solution in ${langConfig.label} (${langConfig.details}), followed by time and space complexity.
 If it is a project, conceptual, situational, or multiple-choice question, provide a concise, speakable answer in bullet points—STRICTLY DO NOT generate code blocks.`
 
     let lastError: unknown = null
@@ -981,8 +1034,11 @@ If it is a project, conceptual, situational, or multiple-choice question, provid
 
   updateConfig(config: Partial<OpenAIConfig>): void {
     this.config = { ...this.config, ...config }
-    if (config.resumeDescription !== undefined) {
-      this.systemPrompt = getGlanceModeSystemPrompt(config.resumeDescription || '')
+    if (config.resumeDescription !== undefined || config.codingLanguage !== undefined) {
+      this.systemPrompt = getGlanceModeSystemPrompt(
+        this.config.resumeDescription || '',
+        this.config.codingLanguage || 'cpp'
+      )
     }
   }
 }

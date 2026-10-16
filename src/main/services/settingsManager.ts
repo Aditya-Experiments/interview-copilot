@@ -9,11 +9,13 @@ config()
 export type SttProvider = 'groq' | 'deepgram' | 'gemini' | 'openai'
 export type LlmProvider = 'groq' | 'gemini' | 'openai'
 export type VisionProvider = 'gemini' | 'openai'
+export type CodingLanguage = 'cpp' | 'python' | 'java'
 
 export interface AppSettings {
   sttProvider?: SttProvider
   llmProvider?: LlmProvider
   visionProvider?: VisionProvider
+  codingLanguage?: CodingLanguage
 
   groqApiKeys?: string[]
   geminiApiKeys?: string[]
@@ -63,6 +65,7 @@ const DEFAULT_SETTINGS: AppSettings = {
     'qwen/qwen3.8-27b',
   groqModel: 'qwen/qwen3.8-27b',
   geminiModel: 'gemini-3.5-flash-lite',
+  codingLanguage: 'cpp',
   deepgramApiKey: getEnvApiKey('DEEPGRAM_API_KEY') || '',
   alwaysOnTop: true,
   windowOpacity: 1.0,
@@ -198,6 +201,9 @@ export class SettingsManager {
         }
         if (savedSettings.geminiModel === 'gemini-2.5-flash' || savedSettings.geminiModel === 'gemini-2.5-flash-lite') {
           savedSettings.geminiModel = 'gemini-3.5-flash-lite'
+        }
+        if (!savedSettings.codingLanguage || !['cpp', 'python', 'java'].includes(savedSettings.codingLanguage)) {
+          savedSettings.codingLanguage = 'cpp'
         }
 
         const loaded: AppSettings = {

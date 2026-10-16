@@ -2,6 +2,7 @@ import {
   AlertCircle,
   Camera,
   CheckCircle,
+  Code2,
   Coffee,
   Cpu,
   Eye,
@@ -247,6 +248,7 @@ export function SettingsModal(): React.JSX.Element | null {
         sttProvider: localSettings.sttProvider || 'groq',
         llmProvider: localSettings.llmProvider || 'groq',
         visionProvider: localSettings.visionProvider || 'gemini',
+        codingLanguage: localSettings.codingLanguage || 'cpp',
         groqApiKeys: cleanGroq,
         geminiApiKeys: cleanGemini,
         openaiApiKeys: cleanOpenAI,
@@ -510,6 +512,81 @@ export function SettingsModal(): React.JSX.Element | null {
               >
                 {showDeepgramKey ? <EyeOff size={14} /> : <Eye size={14} />}
               </button>
+            </div>
+          </div>
+
+          {/* LeetCode & Coding Language Selection */}
+          <div className="p-4 rounded-xl bg-gradient-to-br from-emerald-950/30 via-dark-800/90 to-dark-800/80 border border-emerald-500/20 space-y-3 shadow-lg">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="p-1.5 rounded-lg bg-emerald-500/20 text-emerald-400">
+                  <Code2 size={16} />
+                </div>
+                <div>
+                  <h3 className="text-sm font-semibold text-dark-100">LeetCode & Coding Language</h3>
+                  <p className="text-[11px] text-dark-400">
+                    Default programming language for LeetCode prompts, algorithms, and screenshot solutions
+                  </p>
+                </div>
+              </div>
+              <span className="text-[10px] font-medium px-2 py-0.5 rounded-full border text-emerald-400 bg-emerald-400/10 border-emerald-400/20 font-mono uppercase">
+                {localSettings.codingLanguage || 'cpp'}
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5 pt-1">
+              {[
+                {
+                  id: 'cpp' as const,
+                  name: 'C++',
+                  badge: 'C++17 / C++20',
+                  desc: 'Standard STL (vector, unordered_map, priority_queue)'
+                },
+                {
+                  id: 'python' as const,
+                  name: 'Python',
+                  badge: 'Python 3',
+                  desc: 'Clean & idiomatic (collections, heapq, bisect)'
+                },
+                {
+                  id: 'java' as const,
+                  name: 'Java',
+                  badge: 'Java 17+',
+                  desc: 'Standard Collections (List, HashMap, Deque)'
+                }
+              ].map((lang) => {
+                const isSelected = (localSettings.codingLanguage || 'cpp') === lang.id
+                return (
+                  <button
+                    key={lang.id}
+                    type="button"
+                    onClick={() =>
+                      setLocalSettings({ ...localSettings, codingLanguage: lang.id })
+                    }
+                    className={`flex flex-col items-start p-3 rounded-lg border text-left transition-all ${
+                      isSelected
+                        ? 'bg-blue-600/20 border-blue-500 text-dark-100 shadow-md ring-1 ring-blue-500/40'
+                        : 'bg-dark-900 border-dark-600/80 text-dark-300 hover:border-dark-500 hover:text-dark-100 hover:bg-dark-800'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between w-full">
+                      <span className="text-xs font-semibold">{lang.name}</span>
+                      <span
+                        className={`text-[9px] px-1.5 py-0.5 rounded font-mono ${
+                          isSelected
+                            ? 'bg-blue-500 text-white font-medium'
+                            : 'bg-dark-700 text-dark-400'
+                        }`}
+                      >
+                        {lang.badge}
+                      </span>
+                    </div>
+                    <span className="text-[10px] text-dark-400 mt-1 leading-tight">
+                      {lang.desc}
+                    </span>
+                  </button>
+                )
+              })}
             </div>
           </div>
 

@@ -61,7 +61,8 @@ export function initializeIpcHandlers(window: BrowserWindow): void {
       updates.geminiModel !== undefined ||
       updates.llmProvider !== undefined ||
       updates.visionProvider !== undefined ||
-      updates.resumeDescription !== undefined
+      updates.resumeDescription !== undefined ||
+      updates.codingLanguage !== undefined
     ) {
       visionService = null
       if (openaiService) {
@@ -76,7 +77,8 @@ export function initializeIpcHandlers(window: BrowserWindow): void {
           geminiModel: updates.geminiModel,
           resumeDescription: updates.resumeDescription,
           llmProvider: updates.llmProvider,
-          visionProvider: updates.visionProvider
+          visionProvider: updates.visionProvider,
+          codingLanguage: updates.codingLanguage
         })
       }
     }
@@ -345,7 +347,8 @@ export function initializeIpcHandlers(window: BrowserWindow): void {
         geminiModel: settings.geminiModel || 'gemini-3.5-flash-lite',
         resumeDescription: settings.resumeDescription,
         llmProvider: settings.llmProvider || 'groq',
-        visionProvider: settings.visionProvider || 'gemini'
+        visionProvider: settings.visionProvider || 'gemini',
+        codingLanguage: settings.codingLanguage || 'cpp'
       })
 
       // Set up OpenAI event listeners ONCE
@@ -775,7 +778,8 @@ export function initializeIpcHandlers(window: BrowserWindow): void {
           geminiModel: settings?.geminiModel,
           resumeDescription: settings?.resumeDescription,
           llmProvider: settings?.llmProvider,
-          visionProvider: settings?.visionProvider
+          visionProvider: settings?.visionProvider,
+          codingLanguage: settings?.codingLanguage || 'cpp'
         })
 
         // Set up OpenAI event listeners
@@ -785,6 +789,13 @@ export function initializeIpcHandlers(window: BrowserWindow): void {
 
         openaiService.on('complete', (answer) => {
           mainWindow?.webContents.send('answer-complete', answer)
+        })
+      } else {
+        openaiService.updateConfig({
+          codingLanguage: settings?.codingLanguage || 'cpp',
+          resumeDescription: settings?.resumeDescription,
+          llmProvider: settings?.llmProvider,
+          visionProvider: settings?.visionProvider
         })
       }
 
