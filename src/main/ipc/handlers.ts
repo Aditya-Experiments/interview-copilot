@@ -64,19 +64,22 @@ export function initializeIpcHandlers(window: BrowserWindow): void {
       updates.resumeDescription !== undefined
     ) {
       visionService = null
-      if (openaiService) {
+      const fresh = settingsManager?.getSettings()
+      if (openaiService && fresh) {
         openaiService.updateConfig({
-          groqApiKeys: updates.groqApiKeys,
-          geminiApiKeys: updates.geminiApiKeys,
-          openaiApiKeys: updates.openaiApiKeys,
-          apiKey: updates.openaiApiKey,
-          model: updates.openaiModel,
-          openaiModel: updates.openaiModel,
-          groqModel: updates.groqModel,
-          geminiModel: updates.geminiModel,
-          resumeDescription: updates.resumeDescription,
-          llmProvider: updates.llmProvider,
-          visionProvider: updates.visionProvider
+          groqApiKeys: fresh.groqApiKeys,
+          geminiApiKeys: fresh.geminiApiKeys,
+          openaiApiKeys: fresh.openaiApiKeys,
+          apiKey: fresh.openaiApiKey,
+          groqApiKey: fresh.groqApiKey,
+          geminiApiKey: fresh.geminiApiKey,
+          model: fresh.openaiModel,
+          openaiModel: fresh.openaiModel,
+          groqModel: fresh.groqModel,
+          geminiModel: fresh.geminiModel,
+          resumeDescription: fresh.resumeDescription,
+          llmProvider: fresh.llmProvider,
+          visionProvider: fresh.visionProvider
         })
       }
     }
@@ -775,13 +778,15 @@ export function initializeIpcHandlers(window: BrowserWindow): void {
           geminiApiKeys: settings?.geminiApiKeys,
           openaiApiKeys: settings?.openaiApiKeys,
           apiKey: settings?.openaiApiKey,
+          groqApiKey: settings?.groqApiKey,
+          geminiApiKey: settings?.geminiApiKey,
           model: settings?.openaiModel,
           openaiModel: settings?.openaiModel,
-          groqModel: settings?.groqModel,
-          geminiModel: settings?.geminiModel,
+          groqModel: settings?.groqModel || 'llama-3.3-70b-versatile',
+          geminiModel: settings?.geminiModel || 'gemini-3.5-flash-lite',
           resumeDescription: settings?.resumeDescription,
-          llmProvider: settings?.llmProvider,
-          visionProvider: settings?.visionProvider
+          llmProvider: settings?.llmProvider || 'groq',
+          visionProvider: settings?.visionProvider || 'groq'
         })
 
         // Set up OpenAI event listeners
@@ -791,6 +796,22 @@ export function initializeIpcHandlers(window: BrowserWindow): void {
 
         openaiService.on('complete', (answer) => {
           mainWindow?.webContents.send('answer-complete', answer)
+        })
+      } else {
+        openaiService.updateConfig({
+          groqApiKeys: settings?.groqApiKeys,
+          geminiApiKeys: settings?.geminiApiKeys,
+          openaiApiKeys: settings?.openaiApiKeys,
+          apiKey: settings?.openaiApiKey,
+          groqApiKey: settings?.groqApiKey,
+          geminiApiKey: settings?.geminiApiKey,
+          model: settings?.openaiModel,
+          openaiModel: settings?.openaiModel,
+          groqModel: settings?.groqModel || 'llama-3.3-70b-versatile',
+          geminiModel: settings?.geminiModel || 'gemini-3.5-flash-lite',
+          resumeDescription: settings?.resumeDescription,
+          llmProvider: settings?.llmProvider || 'groq',
+          visionProvider: settings?.visionProvider || 'groq'
         })
       }
 

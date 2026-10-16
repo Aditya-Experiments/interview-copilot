@@ -786,7 +786,13 @@ export class OpenAIService extends EventEmitter {
     questionText?: string,
     questionType?: 'leetcode' | 'system-design' | 'other'
   ): Promise<string> {
-    const attempts = this.getProviderAttempts(this.config.visionProvider || 'gemini')
+    // If question text is available, respect the user's chosen LLM engine (e.g. Groq); otherwise use visionProvider
+    const preferredProvider =
+      questionText && questionText.trim().length > 10
+        ? (this.config.llmProvider || this.config.visionProvider || 'groq')
+        : (this.config.visionProvider || 'groq')
+
+    const attempts = this.getProviderAttempts(preferredProvider)
     if (attempts.length === 0) {
       throw new Error('No API keys configured. Please add an API key in Settings.')
     }
