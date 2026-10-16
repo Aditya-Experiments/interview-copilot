@@ -20,7 +20,7 @@ export interface AnswerEntry {
 export interface AppSettings {
   sttProvider?: 'groq' | 'deepgram' | 'gemini' | 'openai'
   llmProvider?: 'groq' | 'gemini' | 'openai'
-  visionProvider?: 'gemini' | 'openai'
+  visionProvider?: 'gemini' | 'openai' | 'groq'
 
   groqApiKeys?: string[]
   geminiApiKeys?: string[]

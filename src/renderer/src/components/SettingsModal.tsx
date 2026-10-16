@@ -392,10 +392,12 @@ export function SettingsModal(): React.JSX.Element | null {
                   onChange={(e) => setLocalSettings({ ...localSettings, visionProvider: e.target.value as any })}
                   className="w-full px-2.5 py-2 bg-dark-900 border border-dark-600 rounded-lg text-xs text-dark-100 focus:outline-none focus:border-blue-500 transition-colors"
                 >
-                  <option value="gemini">Google Gemini (Free - gemini-3.8-flash - Recommended)</option>
+                  <option value="groq">Groq Vision (100% Free - Qwen 3.8 27B LPU - Ultra Fast)</option>
+                  <option value="gemini">Google Gemini (100% Free - gemini-3.8-flash - Recommended)</option>
                   <option value="openai">OpenAI Vision (Official OpenAI sk-... key)</option>
                 </select>
                 <p className="text-[10px] text-dark-400 leading-tight">
+                  {localSettings.visionProvider === 'groq' && 'Uses Groq LPU Vision (Qwen 3.8 27B) to analyze screenshots with sub-second speed (100% free).'}
                   {(localSettings.visionProvider || 'gemini') === 'gemini' && 'Uses Google Gemini multimodal vision to solve screenshot questions (100% free).'}
                   {localSettings.visionProvider === 'openai' && 'Uses GPT-4o with official OpenAI key (sk-...). Note: GitHub tokens are text-only models.'}
                 </p>
@@ -410,7 +412,8 @@ export function SettingsModal(): React.JSX.Element | null {
             badgeColor="text-amber-400 bg-amber-400/10 border-amber-400/20"
             activeRole={[
               (localSettings.sttProvider || 'groq') === 'groq' ? 'Active STT' : '',
-              (localSettings.llmProvider || 'groq') === 'groq' ? 'Active AI' : ''
+              (localSettings.llmProvider || 'groq') === 'groq' ? 'Active AI' : '',
+              localSettings.visionProvider === 'groq' ? 'Active Vision' : ''
             ].filter(Boolean).join(' & ')}
             linkText="Get Free Groq Key (No Card) →"
             linkUrl="https://console.groq.com/keys"

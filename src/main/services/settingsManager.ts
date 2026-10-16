@@ -8,7 +8,7 @@ config()
 
 export type SttProvider = 'groq' | 'deepgram' | 'gemini' | 'openai'
 export type LlmProvider = 'groq' | 'gemini' | 'openai'
-export type VisionProvider = 'gemini' | 'openai'
+export type VisionProvider = 'gemini' | 'openai' | 'groq'
 
 export interface AppSettings {
   sttProvider?: SttProvider

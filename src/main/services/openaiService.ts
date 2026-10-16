@@ -23,7 +23,7 @@ export interface OpenAIConfig {
   temperature?: number
   resumeDescription?: string
   llmProvider?: 'groq' | 'gemini' | 'openai'
-  visionProvider?: 'gemini' | 'openai'
+  visionProvider?: 'gemini' | 'openai' | 'groq'
 }
 
 export type QuestionGlanceCategory = 'architecture_project' | 'behavioral' | 'coding' | 'conceptual' | 'unknown'
@@ -804,44 +804,55 @@ If it is a project, conceptual, situational, or multiple-choice question, provid
 
       try {
         if (attempt.provider === 'groq') {
-          // If question text was already extracted by vision, Groq can solve it directly via text (ultra fast)!
-          if (questionText && questionText.trim().length > 10) {
-            const client = new OpenAI({
-              apiKey: attempt.key,
-              baseURL: 'https://api.groq.com/openai/v1'
-            })
+          const client = new OpenAI({
+            apiKey: attempt.key,
+            baseURL: 'https://api.groq.com/openai/v1'
+          })
 
-            const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
-              { role: 'system', content: attemptSolutionPrompt },
-              { role: 'user', content: promptText }
-            ]
-
-            const stream = await client.chat.completions.create({
-              model: this.config.groqModel || 'qwen/qwen3.8-27b',
-              messages: messages,
-              max_completion_tokens: this.config.maxTokens || 4096,
-              temperature: this.config.temperature || 0.7,
-              stream: true
-            })
-
-            try {
-              for await (const chunk of stream) {
-                const content = chunk.choices[0]?.delta?.content || ''
-                if (content) {
-                  fullResponse += content
-                  this.emit('stream', content)
+          const hasExtractedText = Boolean(questionText && questionText.trim().length > 10)
+          const userContent: any = hasExtractedText
+            ? promptText
+            : [
+                { type: 'text', text: promptText },
+                {
+                  type: 'image_url',
+                  image_url: { url: dataUrl }
                 }
-              }
-            } catch (streamErr: any) {
-              if (fullResponse.trim().length > 50 && (streamErr?.message?.includes('EOF') || streamErr?.message?.includes('stream'))) {
-                console.warn(`Groq stream ended with unexpected EOF, preserved response (${fullResponse.length} chars)`)
-              } else {
-                throw streamErr
+              ]
+
+          const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
+            { role: 'system', content: attemptSolutionPrompt },
+            { role: 'user', content: userContent }
+          ]
+
+          // For raw images without extracted text, use Groq's multimodal vision model (qwen/qwen3.8-27b)
+          // When question text is available, use Groq's reasoning model (e.g. deepseek-r1-distill-llama-70b) or qwen
+          const groqModelToUse = hasExtractedText
+            ? (this.config.groqModel || 'qwen/qwen3.8-27b')
+            : 'qwen/qwen3.8-27b'
+
+          const stream = await client.chat.completions.create({
+            model: groqModelToUse,
+            messages: messages,
+            max_completion_tokens: this.config.maxTokens || 4096,
+            temperature: this.config.temperature || 0.7,
+            stream: true
+          })
+
+          try {
+            for await (const chunk of stream) {
+              const content = chunk.choices[0]?.delta?.content || ''
+              if (content) {
+                fullResponse += content
+                this.emit('stream', content)
               }
             }
-          } else {
-            // Groq does not have a raw vision model on this project tier, let Gemini or OpenAI process the raw image
-            continue
+          } catch (streamErr: any) {
+            if (fullResponse.trim().length > 50 && (streamErr?.message?.includes('EOF') || streamErr?.message?.includes('stream'))) {
+              console.warn(`Groq stream ended with unexpected EOF, preserved response (${fullResponse.length} chars)`)
+            } else {
+              throw streamErr
+            }
           }
         } else if (attempt.provider === 'openai') {
           const isGitHub = attempt.key.startsWith('ghp_') || attempt.key.startsWith('github_pat_')
