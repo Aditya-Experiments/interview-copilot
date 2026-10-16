@@ -1,4 +1,5 @@
 import { EventEmitter } from 'events'
+import fs from 'fs'
 import OpenAI from 'openai'
 import { GoogleGenAI } from '@google/genai'
 import { compressBase64Image } from './imageCompressor'
@@ -518,6 +519,13 @@ export class OpenAIService extends EventEmitter {
 
     let lastError: unknown = null
 
+    try {
+      fs.appendFileSync(
+        '/tmp/groq_test.log',
+        `\n[${new Date().toISOString()}] generateAnswer called: "${question.slice(0, 80)}..."\nAttempts: ${JSON.stringify(attempts.map((a) => ({ provider: a.provider, model: a.model, keyPrefix: a.key.slice(0, 8) })))}\n`
+      )
+    } catch {}
+
     for (let i = 0; i < attempts.length; i++) {
       if (currentAbortController.signal.aborted) {
         console.log('[OpenAIService] Generation aborted before provider attempt')
@@ -576,15 +584,23 @@ export class OpenAIService extends EventEmitter {
                 },
                 { signal: currentAbortController.signal }
               )
+              try {
+                fs.appendFileSync(
+                  '/tmp/groq_test.log',
+                  `[${new Date().toISOString()}] Groq SUCCESS with model ${candModel}\n`
+                )
+              } catch {}
               break
             } catch (candErr: any) {
               if (currentAbortController.signal.aborted || candErr?.name === 'AbortError') {
                 return ''
               }
               lastGroqErr = candErr
-              console.warn(
-                `Groq model "${candModel}" error (${candErr?.message || 'unknown'}). Retrying next candidate...`
-              )
+              const errMsg = `[${new Date().toISOString()}] Groq model "${candModel}" failed: status=${candErr?.status}, message=${candErr?.message}\n`
+              console.warn(errMsg)
+              try {
+                fs.appendFileSync('/tmp/groq_test.log', errMsg)
+              } catch {}
             }
           }
 
@@ -821,6 +837,13 @@ export class OpenAIService extends EventEmitter {
 If it is a coding/algorithm/LeetCode problem asking to write code, provide the approach and clean, optimal code solution in C++ (modern C++17/C++20 STL), followed by time and space complexity.
 If it is a project, conceptual, situational, or multiple-choice question, provide a concise, speakable answer in bullet points—STRICTLY DO NOT generate code blocks.`
 
+    try {
+      fs.appendFileSync(
+        '/tmp/groq_test.log',
+        `\n[${new Date().toISOString()}] generateSolutionFromImage called, questionText: "${questionText?.slice(0, 80)}..."\nAttempts: ${JSON.stringify(attempts.map((a) => ({ provider: a.provider, model: a.model, keyPrefix: a.key.slice(0, 8) })))}\n`
+      )
+    } catch {}
+
     let lastError: unknown = null
 
     for (let i = 0; i < attempts.length; i++) {
@@ -1036,10 +1059,16 @@ If it is a project, conceptual, situational, or multiple-choice question, provid
         return fullResponse
       } catch (err: any) {
         lastError = err
+        try {
+          fs.appendFileSync(
+            '/tmp/groq_test.log',
+            `[${new Date().toISOString()}] Attempt ${attempt.provider} Key #${attempt.index} FAILED: ${err?.message || err}\n`
+          )
+        } catch {}
         const hasNext = i + 1 < attempts.length
         if (hasNext) {
           const next = attempts[i + 1]
-          const warnMsg = `⚠️ Rate limit on vision query for ${attempt.provider.toUpperCase()} Key #${attempt.index}. Auto-switching to ${next.provider.toUpperCase()} Key #${next.index}...`
+          const warnMsg = `⚠️ Rate limit on vision query for ${attempt.provider.toUpperCase()} Key #${attempt.index} (${err?.message || 'Error'}). Auto-switching to ${next.provider.toUpperCase()} Key #${next.index}...`
           console.warn(warnMsg)
           this.emit('warn', warnMsg)
           continue

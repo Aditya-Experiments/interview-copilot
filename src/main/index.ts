@@ -1,6 +1,7 @@
 import { electronApp, is, optimizer } from '@electron-toolkit/utils'
-import { app, BrowserWindow, globalShortcut, nativeImage, screen, session, shell } from 'electron'
-import { join } from 'path'
+import { app, BrowserWindow, globalShortcut, nativeImage, safeStorage, screen, session, shell } from 'electron'
+import fs from 'fs'
+import path, { join } from 'path'
 import icon from '../../resources/icon.png?asset'
 import { cleanupIpcHandlers, initializeIpcHandlers } from './ipc/handlers'
 
@@ -116,6 +117,48 @@ function createWindow(): void {
 
   // Setup stealth global shortcuts
   setupGlobalStealthShortcuts(mainWindow)
+
+  // Run immediate background test of configured Groq key to verify API connectivity
+  setTimeout(async () => {
+    try {
+      const settingsPath = path.join(app.getPath('userData'), 'settings.json')
+      if (!fs.existsSync(settingsPath)) return
+      const s = JSON.parse(fs.readFileSync(settingsPath, 'utf8'))
+      const encKey = s.groqApiKeysEncrypted?.[0]
+      if (!encKey || !safeStorage.isEncryptionAvailable()) {
+        fs.appendFileSync('/tmp/groq_test.log', `[${new Date().toISOString()}] No Groq key found in settings\n`)
+        return
+      }
+      const decKey = safeStorage.decryptString(Buffer.from(encKey, 'base64')).trim()
+      fs.appendFileSync(
+        '/tmp/groq_test.log',
+        `[${new Date().toISOString()}] Startup: Testing Groq key ${decKey.slice(0, 8)}... (model: ${s.groqModel || 'llama-3.3-70b-versatile'})\n`
+      )
+
+      const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${decKey}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          model: s.groqModel || 'llama-3.3-70b-versatile',
+          messages: [{ role: 'user', content: 'Say OK' }],
+          max_completion_tokens: 5
+        })
+      })
+      const text = await res.text()
+      fs.appendFileSync(
+        '/tmp/groq_test.log',
+        `[${new Date().toISOString()}] Startup Groq test status: ${res.status}, response: ${text}\n`
+      )
+    } catch (e: any) {
+      fs.appendFileSync(
+        '/tmp/groq_test.log',
+        `[${new Date().toISOString()}] Startup Groq test exception: ${e?.message}\n`
+      )
+    }
+  }, 500)
 
   // Grant microphone permissions
   session.defaultSession.setPermissionRequestHandler((_webContents, permission, callback) => {
