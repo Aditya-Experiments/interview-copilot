@@ -96,13 +96,13 @@ You MUST respond ONLY with valid JSON in this exact format:
         let response
         try {
           response = await ai.models.generateContent({
-            model: 'gemini-2.5-flash',
+            model: 'gemini-3.8-flash',
             ...requestPayload
           })
         } catch {
           try {
             response = await ai.models.generateContent({
-              model: 'gemini-2.5-flash-lite',
+              model: 'gemini-3.5-flash-lite',
               ...requestPayload
             })
           } catch {
@@ -112,10 +112,17 @@ You MUST respond ONLY with valid JSON in this exact format:
                 ...requestPayload
               })
             } catch {
-              response = await ai.models.generateContent({
-                model: 'gemini-3.5-flash-lite',
-                ...requestPayload
-              })
+              try {
+                response = await ai.models.generateContent({
+                  model: 'gemini-2.5-flash',
+                  ...requestPayload
+                })
+              } catch {
+                response = await ai.models.generateContent({
+                  model: 'gemini-2.5-flash-lite',
+                  ...requestPayload
+                })
+              }
             }
           }
         }

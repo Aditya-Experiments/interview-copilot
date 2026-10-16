@@ -169,9 +169,9 @@ export function initializeIpcHandlers(window: BrowserWindow): void {
 
       // Handle Google Gemini API Keys
       const defaultGeminiModels = [
+        { id: 'gemini-3.8-flash', name: 'Gemini 3.8 Flash (Latest Model - High Quality & Multimodal)' },
         { id: 'gemini-3.5-flash-lite', name: 'Gemini 3.5 Flash Lite (Latest & Highest Free Limit)' },
         { id: 'gemini-3.1-flash-lite', name: 'Gemini 3.1 Flash Lite (Fast & Free)' },
-        { id: 'gemini-3.8-flash', name: 'Gemini 3.8 Flash (Free)' },
         { id: 'gemini-2.5-flash-lite', name: 'Gemini 2.5 Flash Lite (Free)' },
         { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash (Free)' }
       ]

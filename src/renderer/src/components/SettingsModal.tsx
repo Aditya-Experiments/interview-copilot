@@ -30,6 +30,7 @@ const GROQ_MODELS: ModelOption[] = [
 ]
 
 const GEMINI_MODELS: ModelOption[] = [
+  { id: 'gemini-3.8-flash', name: 'Gemini 3.8 Flash (Latest Model - High Quality & Multimodal)' },
   { id: 'gemini-3.5-flash-lite', name: 'Gemini 3.5 Flash Lite (500 RPD, 15 RPM - High Quota & Fast)' },
   { id: 'gemini-3.1-flash-lite', name: 'Gemini 3.1 Flash Lite (500 RPD, 15 RPM - Ultra Fast)' },
   { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash (20 RPD - Low Free Limit)' },
