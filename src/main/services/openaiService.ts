@@ -1,6 +1,7 @@
 import { EventEmitter } from 'events'
 import OpenAI from 'openai'
 import { GoogleGenAI } from '@google/genai'
+import { compressBase64Image } from './imageCompressor'
 
 export interface Message {
   role: 'system' | 'user' | 'assistant'
@@ -544,8 +545,9 @@ export class OpenAIService extends EventEmitter {
 
           const candidateModels = [
             attempt.model,
+            'deepseek-r1-distill-llama-70b',
+            'deepseek-r1-distill-qwen-32b',
             'qwen/qwen3.8-27b',
-            'openai/gpt-oss-20b',
             'openai/gpt-oss-120b',
             'llama-3.3-70b-versatile',
             'llama-3.1-8b-instant'
@@ -597,9 +599,14 @@ export class OpenAIService extends EventEmitter {
           )
         } else if (attempt.provider === 'openai') {
           const isGitHub = attempt.key.startsWith('ghp_') || attempt.key.startsWith('github_pat_')
+          if (isGitHub) {
+            throw new Error(
+              'GitHub Models was officially retired by GitHub. Please use an official OpenAI key (sk-...) from platform.openai.com or use free Google Gemini / Groq.'
+            )
+          }
+
           const client = new OpenAI({
-            apiKey: attempt.key,
-            baseURL: isGitHub ? 'https://models.inference.ai.azure.com' : undefined
+            apiKey: attempt.key
           })
 
           const isReasoning = attempt.model.startsWith('o1') || attempt.model.startsWith('o3')
@@ -762,7 +769,11 @@ export class OpenAIService extends EventEmitter {
       throw new Error('No API keys configured. Please add an API key in Settings.')
     }
 
-    const base64Data = imageBase64.includes(',') ? imageBase64.split(',')[1] : imageBase64
+    // Compress image to lightweight JPEG (drops ~12MB down to ~150KB) so API uploads don't timeout
+    const compressed = compressBase64Image(imageBase64, 1600, 82)
+    const base64Data = compressed.base64
+    const mimeType = compressed.mimeType
+    const dataUrl = compressed.dataUrl
     const solutionPrompt = getSolutionSystemPrompt(questionType, this.config.resumeDescription)
 
     const isExplicitCoding =
@@ -834,18 +845,19 @@ If it is a project, conceptual, situational, or multiple-choice question, provid
           }
         } else if (attempt.provider === 'openai') {
           const isGitHub = attempt.key.startsWith('ghp_') || attempt.key.startsWith('github_pat_')
-          if (isGitHub && !questionText) {
-            // GitHub Models requires extracted text; let Gemini process the raw image
-            continue
+          if (isGitHub) {
+            throw new Error(
+              'GitHub Models was officially retired by GitHub. Please use an official OpenAI key (sk-...) from platform.openai.com or use free Google Gemini / Groq.'
+            )
           }
           const client = new OpenAI({
-            apiKey: attempt.key,
-            baseURL: isGitHub ? 'https://models.inference.ai.azure.com' : undefined
+            apiKey: attempt.key
           })
           const isReasoning = attempt.model.startsWith('o1') || attempt.model.startsWith('o3')
-          const isTextOnlyReasoning = isGitHub || attempt.model.startsWith('o1-mini') || attempt.model.startsWith('o3-mini')
+          const isTextOnlyReasoning = attempt.model.startsWith('o1-mini') || attempt.model.startsWith('o3-mini')
 
           if (isTextOnlyReasoning && !questionText) {
+            // Text-only reasoning models cannot process raw images without extracted text
             continue
           }
 
@@ -855,7 +867,7 @@ If it is a project, conceptual, situational, or multiple-choice question, provid
                 { type: 'text', text: promptText },
                 {
                   type: 'image_url',
-                  image_url: { url: `data:image/png;base64,${base64Data}` }
+                  image_url: { url: dataUrl }
                 }
               ]
 
@@ -906,7 +918,7 @@ If it is a project, conceptual, situational, or multiple-choice question, provid
                   { text: promptText },
                   {
                     inlineData: {
-                      mimeType: 'image/png',
+                      mimeType: mimeType,
                       data: base64Data
                     }
                   }

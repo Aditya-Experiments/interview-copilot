@@ -23,26 +23,27 @@ interface ModelOption {
 }
 
 const GROQ_MODELS: ModelOption[] = [
+  { id: 'deepseek-r1-distill-llama-70b', name: 'DeepSeek R1 70B (Best for Hard Coding & LeetCode - Free on Groq)' },
+  { id: 'deepseek-r1-distill-qwen-32b', name: 'DeepSeek R1 Qwen 32B (Ultra Fast ~380 tok/s - Free on Groq)' },
   { id: 'qwen/qwen3.8-27b', name: 'Qwen 3.8 27B (Ultra-Fast ~150ms - Recommended)' },
-  { id: 'openai/gpt-oss-20b', name: 'GPT-OSS 20B (High Speed ~200ms - Groq LPU)' },
   { id: 'openai/gpt-oss-120b', name: 'GPT-OSS 120B (Large Reasoning Model)' },
   { id: 'llama-3.3-70b-versatile', name: 'Llama 3.3 70B Versatile' },
   { id: 'llama-3.1-8b-instant', name: 'Llama 3.1 8B Instant' }
 ]
 
 const GEMINI_MODELS: ModelOption[] = [
+  { id: 'gemini-2.5-pro', name: 'Gemini 2.5 Pro (Deep Reasoning & Hard Coding - Free on AI Studio)' },
   { id: 'gemini-3.8-flash', name: 'Gemini 3.8 Flash (Latest Model - High Quality & Multimodal)' },
   { id: 'gemini-3.5-flash-lite', name: 'Gemini 3.5 Flash Lite (500 RPD, 15 RPM - High Quota & Fast)' },
   { id: 'gemini-3.1-flash-lite', name: 'Gemini 3.1 Flash Lite (500 RPD, 15 RPM - Ultra Fast)' },
-  { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash (20 RPD - Low Free Limit)' },
-  { id: 'gemini-2.5-flash-lite', name: 'Gemini 2.5 Flash Lite (20 RPD - Low Free Limit)' }
+  { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash (Free)' }
 ]
 
 const OPENAI_MODELS: ModelOption[] = [
-  { id: 'gpt-4o-mini', name: 'GPT-4o Mini (Fast & Smart - OpenAI / GitHub Models)' },
-  { id: 'gpt-4o', name: 'GPT-4o (Flagship - OpenAI / GitHub Models)' },
-  { id: 'o1-mini', name: 'o1-mini (Top Reasoning & LeetCode - Free on GitHub)' },
-  { id: 'o3-mini', name: 'o3-mini (Advanced Reasoning - Free on GitHub)' }
+  { id: 'gpt-4o', name: 'GPT-4o (Flagship Multimodal - OpenAI)' },
+  { id: 'gpt-4o-mini', name: 'GPT-4o Mini (Fast & Smart - OpenAI)' },
+  { id: 'o1-mini', name: 'o1-mini (Reasoning & LeetCode - OpenAI)' },
+  { id: 'o3-mini', name: 'o3-mini (Advanced Reasoning - OpenAI)' }
 ]
 
 interface KeyListEditorProps {
@@ -445,26 +446,26 @@ export function SettingsModal(): React.JSX.Element | null {
             modelLabel="Gemini Model"
           />
 
-          {/* 3. OpenAI / ChatGPT & GitHub Models Section */}
+          {/* 3. OpenAI / ChatGPT Section */}
           <KeyListEditor
-            title="OpenAI (ChatGPT) & GitHub Models"
-            badge="Official OpenAI or Free GitHub"
+            title="OpenAI (ChatGPT)"
+            badge="Official API"
             badgeColor="text-blue-400 bg-blue-400/10 border-blue-400/20"
             activeRole={[
               localSettings.sttProvider === 'openai' ? 'Active STT' : '',
               localSettings.llmProvider === 'openai' ? 'Active AI' : '',
               localSettings.visionProvider === 'openai' ? 'Active Vision' : ''
             ].filter(Boolean).join(' & ')}
-            linkText="Get Free GitHub Token (ghp_...) →"
-            linkUrl="https://github.com/settings/tokens"
-            description="Use your OpenAI key (sk-...) OR free GitHub Personal Access Token (ghp_...) for 100% free GPT-4o, o1-mini, and o3-mini."
+            linkText="Get OpenAI API Key →"
+            linkUrl="https://platform.openai.com/api-keys"
+            description="Use your official OpenAI key (sk-...). Powers GPT-4o, GPT-4o Mini, and o1/o3 reasoning models. (For 100% free AI, use Google Gemini or Groq above)."
             keys={openaiKeys}
             onChange={(keys) => setLocalSettings({ ...localSettings, openaiApiKeys: keys })}
-            placeholder="sk-... or ghp_..."
+            placeholder="sk-..."
             modelId={localSettings.openaiModel || 'gpt-4o-mini'}
             onModelChange={(model) => setLocalSettings({ ...localSettings, openaiModel: model })}
             modelOptions={OPENAI_MODELS}
-            modelLabel="OpenAI / GitHub Model"
+            modelLabel="OpenAI Model"
           />
 
           {/* 4. Deepgram Section */}

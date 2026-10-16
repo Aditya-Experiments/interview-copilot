@@ -1,4 +1,5 @@
 import { BrowserWindow, desktopCapturer, screen } from 'electron'
+import { compressNativeImage } from './imageCompressor'
 
 export interface ScreenshotResult {
   success: boolean
@@ -69,9 +70,10 @@ export class ScreenshotService {
 
         if (matchingSource && matchingSource.thumbnail && !matchingSource.thumbnail.isEmpty()) {
           console.log(`[ScreenshotService] Successfully captured screen: ${matchingSource.name}`)
+          const compressed = compressNativeImage(matchingSource.thumbnail, 1600, 82)
           return {
             success: true,
-            imageData: matchingSource.thumbnail.toDataURL()
+            imageData: compressed.dataUrl
           }
         }
       }
@@ -120,9 +122,10 @@ export class ScreenshotService {
 
       if (bestCandidate && bestCandidate.thumbnail && !bestCandidate.thumbnail.isEmpty()) {
         console.log(`[ScreenshotService] Captured fallback window: ${bestCandidate.name}`)
+        const compressed = compressNativeImage(bestCandidate.thumbnail, 1600, 82)
         return {
           success: true,
-          imageData: bestCandidate.thumbnail.toDataURL()
+          imageData: compressed.dataUrl
         }
       }
 
@@ -167,9 +170,10 @@ export class ScreenshotService {
         }
       }
 
+      const compressed = compressNativeImage(matchingSource.thumbnail, 1600, 82)
       return {
         success: true,
-        imageData: matchingSource.thumbnail.toDataURL()
+        imageData: compressed.dataUrl
       }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred'

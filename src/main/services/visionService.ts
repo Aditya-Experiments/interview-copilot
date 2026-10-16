@@ -1,5 +1,6 @@
 import OpenAI from 'openai'
 import { GoogleGenAI } from '@google/genai'
+import { compressBase64Image } from './imageCompressor'
 
 export interface VisionAnalysisResult {
   isQuestion: boolean
@@ -23,12 +24,10 @@ export class VisionService {
   constructor(config: VisionServiceConfig) {
     this.config = config
     const key = config.apiKey?.trim() || ''
-    const isGitHub = key.startsWith('ghp_') || key.startsWith('github_pat_')
     const isOpenAI = key.startsWith('sk-')
-    if (isGitHub || isOpenAI) {
+    if (isOpenAI) {
       this.client = new OpenAI({
-        apiKey: key,
-        baseURL: isGitHub ? 'https://models.inference.ai.azure.com' : undefined
+        apiKey: key
       })
     }
   }
@@ -41,12 +40,17 @@ export class VisionService {
   async analyzeScreenshot(imageBase64: string): Promise<VisionAnalysisResult> {
     try {
       const key = this.config.apiKey?.trim() || ''
+      if (key.startsWith('ghp_') || key.startsWith('github_pat_')) {
+        throw new Error('GitHub Models was officially retired by GitHub. Please use an official OpenAI key (sk-...) or free Google Gemini.')
+      }
       if (key.startsWith('gsk_')) {
         throw new Error('Groq API keys do not support image/vision analysis. Please add a free Google Gemini key or OpenAI key in Settings.')
       }
 
-      // Remove data URL prefix if present
-      const base64Data = imageBase64.includes(',') ? imageBase64.split(',')[1] : imageBase64
+      // Compress image to lightweight JPEG (drops ~12MB down to ~150KB) so API uploads don't timeout
+      const compressed = compressBase64Image(imageBase64, 1600, 82)
+      const base64Data = compressed.base64
+      const mimeType = compressed.mimeType
       const isGemini = key.startsWith('AIza') || key.startsWith('AQ.') || (!key.startsWith('sk-') && !key.startsWith('ghp_') && !key.startsWith('github_pat_'))
 
       let content = ''
@@ -82,7 +86,7 @@ You MUST respond ONLY with valid JSON in this exact format:
                 },
                 {
                   inlineData: {
-                    mimeType: 'image/png',
+                    mimeType: mimeType,
                     data: base64Data
                   }
                 }
@@ -177,7 +181,7 @@ If you find ANY of these, respond with JSON where isQuestion=true and include th
                 {
                   type: 'image_url',
                   image_url: {
-                    url: `data:image/png;base64,${base64Data}`
+                    url: compressed.dataUrl
                   }
                 }
               ]

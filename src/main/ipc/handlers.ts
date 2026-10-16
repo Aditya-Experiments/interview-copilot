@@ -150,31 +150,27 @@ export function initializeIpcHandlers(window: BrowserWindow): void {
         return { success: true, models: defaultGroqModels }
       }
 
-      // Handle OpenAI / GitHub Models API Keys (sk-, ghp_, github_pat_)
-      if (
-        trimmedKey.startsWith('sk-') ||
-        trimmedKey.startsWith('ghp_') ||
-        trimmedKey.startsWith('github_pat_')
-      ) {
-        const isGitHub = trimmedKey.startsWith('ghp_') || trimmedKey.startsWith('github_pat_')
+      // Inform user if using retired GitHub token
+      if (trimmedKey.startsWith('ghp_') || trimmedKey.startsWith('github_pat_')) {
+        return {
+          success: false,
+          error:
+            'GitHub Models was retired by GitHub. Please use an official OpenAI key (sk-...) from platform.openai.com or use free Google Gemini / Groq.'
+        }
+      }
+
+      // Handle OpenAI API Keys (sk-)
+      if (trimmedKey.startsWith('sk-')) {
         const OpenAI = (await import('openai')).default
         const client = new OpenAI({
-          apiKey: trimmedKey,
-          baseURL: isGitHub ? 'https://models.inference.ai.azure.com' : undefined
+          apiKey: trimmedKey
         })
-        const defaultModels = isGitHub
-          ? [
-              { id: 'gpt-4o', name: 'GPT-4o (Flagship - Free on GitHub)' },
-              { id: 'gpt-4o-mini', name: 'GPT-4o Mini (Fast & Smart - Free on GitHub)' },
-              { id: 'o1-mini', name: 'o1-mini (Top Reasoning & LeetCode - Free on GitHub)' },
-              { id: 'o3-mini', name: 'o3-mini (Next-Gen Reasoning - Free on GitHub)' }
-            ]
-          : [
-              { id: 'gpt-4o-mini', name: 'GPT-4o Mini (OpenAI)' },
-              { id: 'gpt-4o', name: 'GPT-4o (OpenAI)' },
-              { id: 'o1-mini', name: 'o1-mini (OpenAI Reasoning)' },
-              { id: 'o3-mini', name: 'o3-mini (OpenAI Reasoning)' }
-            ]
+        const defaultModels = [
+          { id: 'gpt-4o-mini', name: 'GPT-4o Mini (OpenAI)' },
+          { id: 'gpt-4o', name: 'GPT-4o (OpenAI)' },
+          { id: 'o1-mini', name: 'o1-mini (OpenAI Reasoning)' },
+          { id: 'o3-mini', name: 'o3-mini (OpenAI Reasoning)' }
+        ]
 
         try {
           const response = await client.models.list()
