@@ -80,33 +80,60 @@ You MUST respond ONLY with valid JSON in this exact format:
 
       if (isGroq) {
         // Groq LPU Vision (Qwen 3.8 27B Multimodal - Sub-second & 100% Free)
-        const response = await this.client!.chat.completions.create({
-          model: 'qwen/qwen3.8-27b',
-          messages: [
-            {
-              role: 'system',
-              content: systemPrompt
-            },
-            {
-              role: 'user',
-              content: [
-                {
-                  type: 'text',
-                  text: 'Analyze this screenshot carefully. Look for any interview question, coding problem, project scenario, or test question. If found, respond with JSON where isQuestion=true.'
-                },
-                {
-                  type: 'image_url',
-                  image_url: {
-                    url: compressed.dataUrl
+        let response: any = null
+        try {
+          response = await this.client!.chat.completions.create({
+            model: 'qwen/qwen3.8-27b',
+            messages: [
+              {
+                role: 'system',
+                content: systemPrompt
+              },
+              {
+                role: 'user',
+                content: [
+                  {
+                    type: 'text',
+                    text: 'Analyze this screenshot carefully. Look for any interview question, coding problem, project scenario, or test question. If found, respond with JSON where isQuestion=true.'
+                  },
+                  {
+                    type: 'image_url',
+                    image_url: {
+                      url: compressed.dataUrl
+                    }
                   }
-                }
-              ]
-            }
-          ],
-          max_completion_tokens: 1000,
-          temperature: 0.2,
-          response_format: { type: 'json_object' }
-        })
+                ]
+              }
+            ],
+            max_completion_tokens: 1000,
+            temperature: 0.2,
+            response_format: { type: 'json_object' }
+          })
+        } catch {
+          // Fallback if system role or json_object response format is restricted
+          response = await this.client!.chat.completions.create({
+            model: 'qwen/qwen3.8-27b',
+            messages: [
+              {
+                role: 'user',
+                content: [
+                  {
+                    type: 'text',
+                    text: `${systemPrompt}\n\nAnalyze this screenshot carefully. Look for any interview question, coding problem, project scenario, or test question. You MUST respond ONLY with valid JSON.`
+                  },
+                  {
+                    type: 'image_url',
+                    image_url: {
+                      url: compressed.dataUrl
+                    }
+                  }
+                ]
+              }
+            ],
+            max_completion_tokens: 1000,
+            temperature: 0.2
+          })
+        }
 
         content = response.choices[0]?.message?.content || ''
       } else if (isGemini) {

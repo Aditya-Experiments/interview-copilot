@@ -23,12 +23,12 @@ interface ModelOption {
 }
 
 const GROQ_MODELS: ModelOption[] = [
-  { id: 'deepseek-r1-distill-llama-70b', name: 'DeepSeek R1 70B (Best for Hard Coding & LeetCode - Free on Groq)' },
-  { id: 'deepseek-r1-distill-qwen-32b', name: 'DeepSeek R1 Qwen 32B (Ultra Fast ~380 tok/s - Free on Groq)' },
-  { id: 'qwen/qwen3.8-27b', name: 'Qwen 3.8 27B (Ultra-Fast ~150ms - Recommended)' },
-  { id: 'openai/gpt-oss-120b', name: 'GPT-OSS 120B (Large Reasoning Model)' },
-  { id: 'llama-3.3-70b-versatile', name: 'Llama 3.3 70B Versatile' },
-  { id: 'llama-3.1-8b-instant', name: 'Llama 3.1 8B Instant' }
+  { id: 'llama-3.3-70b-versatile', name: 'Llama 3.3 70B Versatile (Meta Flagship - Fast & High Quality - Recommended)' },
+  { id: 'llama-3.1-8b-instant', name: 'Llama 3.1 8B Instant (Ultra-Fast ~800 tok/s - Live Speech)' },
+  { id: 'deepseek-r1-distill-llama-70b', name: 'DeepSeek R1 70B (Deep Reasoning & Hard Coding - Free on Groq)' },
+  { id: 'deepseek-r1-distill-qwen-32b', name: 'DeepSeek R1 Qwen 32B (Fast Reasoning ~380 tok/s - Free on Groq)' },
+  { id: 'qwen/qwen3.8-27b', name: 'Qwen 3.8 27B (Vision & Text - Free on Groq)' },
+  { id: 'openai/gpt-oss-120b', name: 'GPT-OSS 120B (Large Reasoning Model)' }
 ]
 
 const GEMINI_MODELS: ModelOption[] = [

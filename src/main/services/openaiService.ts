@@ -538,19 +538,14 @@ export class OpenAIService extends EventEmitter {
             baseURL: 'https://api.groq.com/openai/v1'
           })
 
-          const messages: Message[] = [
-            { role: 'system', content: attemptSystemPrompt },
-            ...this.conversationHistory
-          ]
-
           const candidateModels = [
             attempt.model,
+            'llama-3.3-70b-versatile',
+            'llama-3.1-8b-instant',
             'deepseek-r1-distill-llama-70b',
             'deepseek-r1-distill-qwen-32b',
             'qwen/qwen3.8-27b',
-            'openai/gpt-oss-120b',
-            'llama-3.3-70b-versatile',
-            'llama-3.1-8b-instant'
+            'openai/gpt-oss-120b'
           ].filter((m, idx, arr) => Boolean(m) && arr.indexOf(m) === idx)
 
           let stream: any = null
@@ -559,11 +554,23 @@ export class OpenAIService extends EventEmitter {
           for (const candModel of candidateModels) {
             if (currentAbortController.signal.aborted) return ''
             try {
+              const isDeepseek = candModel.includes('deepseek')
+              const modelMessages: Message[] = isDeepseek
+                ? [
+                    { role: 'user', content: attemptSystemPrompt },
+                    { role: 'assistant', content: 'Understood. I will strictly follow Glance Mode, bullet points, and the required signature.' },
+                    ...this.conversationHistory
+                  ]
+                : [
+                    { role: 'system', content: attemptSystemPrompt },
+                    ...this.conversationHistory
+                  ]
+
               stream = await client.chat.completions.create(
                 {
                   model: candModel,
-                  messages: messages,
-                  max_completion_tokens: this.config.maxTokens || 1200,
+                  messages: modelMessages,
+                  max_completion_tokens: isDeepseek ? 4096 : (this.config.maxTokens || 1200),
                   temperature: this.config.temperature || 0.7,
                   stream: true
                 },
@@ -585,10 +592,25 @@ export class OpenAIService extends EventEmitter {
             throw lastGroqErr
           }
 
+          let inThinkTag = false
           async function* getGroqChunks() {
             for await (const chunk of stream) {
               const content = chunk.choices[0]?.delta?.content || ''
-              if (content) yield content
+              if (!content) continue
+
+              // Strip <think>...</think> chain-of-thought tokens from DeepSeek models so user gets clean answers
+              if (content.includes('<think>')) {
+                inThinkTag = true
+              }
+              if (inThinkTag) {
+                if (content.includes('</think>')) {
+                  inThinkTag = false
+                  const afterThink = content.split('</think>')[1]
+                  if (afterThink && afterThink.trim()) yield afterThink.trimStart()
+                }
+                continue
+              }
+              yield content
             }
           }
 
@@ -820,32 +842,53 @@ If it is a project, conceptual, situational, or multiple-choice question, provid
                 }
               ]
 
-          const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
-            { role: 'system', content: attemptSolutionPrompt },
-            { role: 'user', content: userContent }
-          ]
-
           // For raw images without extracted text, use Groq's multimodal vision model (qwen/qwen3.8-27b)
-          // When question text is available, use Groq's reasoning model (e.g. deepseek-r1-distill-llama-70b) or qwen
+          // When question text is available, use user's selected Groq model or llama-3.3-70b-versatile
           const groqModelToUse = hasExtractedText
-            ? (this.config.groqModel || 'qwen/qwen3.8-27b')
+            ? (this.config.groqModel || 'llama-3.3-70b-versatile')
             : 'qwen/qwen3.8-27b'
+
+          const isDeepseek = groqModelToUse.includes('deepseek')
+          const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = isDeepseek
+            ? [
+                { role: 'user', content: attemptSolutionPrompt },
+                { role: 'assistant', content: 'Understood. I will provide the optimal solution, approach, and signature.' },
+                { role: 'user', content: userContent }
+              ]
+            : [
+                { role: 'system', content: attemptSolutionPrompt },
+                { role: 'user', content: userContent }
+              ]
 
           const stream = await client.chat.completions.create({
             model: groqModelToUse,
             messages: messages,
-            max_completion_tokens: this.config.maxTokens || 4096,
+            max_completion_tokens: isDeepseek ? 4096 : (this.config.maxTokens || 4096),
             temperature: this.config.temperature || 0.7,
             stream: true
           })
 
+          let inThink = false
           try {
             for await (const chunk of stream) {
               const content = chunk.choices[0]?.delta?.content || ''
-              if (content) {
-                fullResponse += content
-                this.emit('stream', content)
+              if (!content) continue
+
+              if (content.includes('<think>')) inThink = true
+              if (inThink) {
+                if (content.includes('</think>')) {
+                  inThink = false
+                  const after = content.split('</think>')[1]
+                  if (after && after.trim()) {
+                    fullResponse += after.trimStart()
+                    this.emit('stream', after.trimStart())
+                  }
+                }
+                continue
               }
+
+              fullResponse += content
+              this.emit('stream', content)
             }
           } catch (streamErr: any) {
             if (fullResponse.trim().length > 50 && (streamErr?.message?.includes('EOF') || streamErr?.message?.includes('stream'))) {

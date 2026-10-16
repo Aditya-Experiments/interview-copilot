@@ -61,7 +61,7 @@ const DEFAULT_SETTINGS: AppSettings = {
     process.env.OPENAI_MODEL ||
     process.env.VITE_OPENAI_MODEL ||
     'qwen/qwen3.8-27b',
-  groqModel: 'qwen/qwen3.8-27b',
+  groqModel: 'llama-3.3-70b-versatile',
   geminiModel: 'gemini-3.5-flash-lite',
   deepgramApiKey: getEnvApiKey('DEEPGRAM_API_KEY') || '',
   alwaysOnTop: true,
@@ -189,12 +189,8 @@ export class SettingsManager {
           deepgramKeys.push(savedSettings.deepgramApiKey.trim())
         }
 
-        if (
-          savedSettings.groqModel === 'llama-3.1-8b-instant' ||
-          savedSettings.groqModel === 'llama-3.3-70b-versatile' ||
-          !savedSettings.groqModel
-        ) {
-          savedSettings.groqModel = 'qwen/qwen3.8-27b'
+        if (!savedSettings.groqModel) {
+          savedSettings.groqModel = 'llama-3.3-70b-versatile'
         }
         if (savedSettings.geminiModel === 'gemini-2.5-flash' || savedSettings.geminiModel === 'gemini-2.5-flash-lite') {
           savedSettings.geminiModel = 'gemini-3.5-flash-lite'
