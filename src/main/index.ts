@@ -7,6 +7,9 @@ import { cleanupIpcHandlers, initializeIpcHandlers } from './ipc/handlers'
 let mainWindow: BrowserWindow | null = null
 
 function setupGlobalStealthShortcuts(win: BrowserWindow): void {
+  let isStealthHidden = false
+  let savedOpacity = 1
+
   // 1. Instant Screenshot & Solve (Cmd/Ctrl + Shift + S)
   globalShortcut.register('CommandOrControl+Shift+S', () => {
     console.log('[StealthHotkey] Triggered Screenshot & Solve (Cmd/Ctrl+Shift+S)')
@@ -19,31 +22,58 @@ function setupGlobalStealthShortcuts(win: BrowserWindow): void {
     win.webContents.send('trigger-stealth-clear')
   })
 
-  // 3. Stealth Panic Toggle (Cmd/Ctrl + Shift + H) - toggle window visibility
+  // 3. Stealth Panic Toggle (Cmd/Ctrl + Shift + H) - Zero-Focus-Steal Hide/Unhide
+  // Keeps the browser tab 100% focused and active at all times without triggering blur events
   globalShortcut.register('CommandOrControl+Shift+H', () => {
-    if (win.isVisible()) {
-      console.log('[StealthHotkey] Window hidden (Cmd/Ctrl+Shift+H)')
-      win.hide()
+    if (win.isDestroyed()) return
+
+    if (!isStealthHidden && win.isVisible() && win.getOpacity() > 0) {
+      console.log('[StealthHotkey] Window stealth-hidden without focus change (Cmd/Ctrl+Shift+H)')
+      isStealthHidden = true
+      savedOpacity = win.getOpacity() > 0 ? win.getOpacity() : (savedOpacity || 1)
+      if (win.isFocused()) {
+        win.blur()
+      }
+      // Set opacity to 0 and forward mouse events so it's 100% invisible and clicks pass through to browser
+      win.setOpacity(0)
+      win.setIgnoreMouseEvents(true, { forward: true })
     } else {
-      console.log('[StealthHotkey] Window shown (Cmd/Ctrl+Shift+H)')
-      win.show()
-      win.focus()
+      console.log('[StealthHotkey] Window stealth-shown without stealing focus (Cmd/Ctrl+Shift+H)')
+      isStealthHidden = false
+      if (!win.isVisible()) {
+        win.showInactive()
+      }
+      if (process.platform === 'darwin') {
+        win.setAlwaysOnTop(true, 'screen-saver')
+        win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
+      } else {
+        win.setAlwaysOnTop(true, 'screen-saver')
+      }
+      win.setContentProtection(true)
+      win.setIgnoreMouseEvents(false)
+      win.setOpacity(savedOpacity > 0 ? savedOpacity : 1)
     }
   })
 
   // 4. Fine-tune opacity up (Cmd/Ctrl + Shift + Up)
   globalShortcut.register('CommandOrControl+Shift+Up', () => {
+    if (win.isDestroyed()) return
     const current = win.getOpacity()
     const next = Math.min(1, Math.round((current + 0.15) * 100) / 100)
     win.setOpacity(next)
+    savedOpacity = next
+    isStealthHidden = false
+    win.setIgnoreMouseEvents(false)
     console.log(`[StealthHotkey] Window opacity: ${next}`)
   })
 
   // 5. Fine-tune opacity down (Cmd/Ctrl + Shift + Down)
   globalShortcut.register('CommandOrControl+Shift+Down', () => {
+    if (win.isDestroyed()) return
     const current = win.getOpacity()
     const next = Math.max(0.15, Math.round((current - 0.15) * 100) / 100)
     win.setOpacity(next)
+    savedOpacity = next
     console.log(`[StealthHotkey] Window opacity: ${next}`)
   })
 }
@@ -100,8 +130,7 @@ function createWindow(): void {
     if (process.platform === 'win32' && !appIcon.isEmpty()) {
       mainWindow?.setIcon(appIcon)
     }
-    mainWindow?.show()
-    mainWindow?.focus()
+    mainWindow?.showInactive()
     // Re-verify content protection whenever window is shown
     mainWindow?.setContentProtection(true)
   })
