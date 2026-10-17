@@ -731,7 +731,10 @@ export function initializeIpcHandlers(window: BrowserWindow): void {
     }
 
     try {
-      // Find a vision-capable key (Gemini or OpenAI)
+      // Find vision-capable keys (Groq, Gemini, or OpenAI)
+      const groqKey =
+        (settings?.groqApiKeys && settings.groqApiKeys.find((k) => k && k.startsWith('gsk_'))) ||
+        (settings?.groqApiKey && settings.groqApiKey.startsWith('gsk_') ? settings.groqApiKey : '')
       const geminiKey =
         (settings?.geminiApiKeys && settings.geminiApiKeys.find((k) => k && !k.startsWith('gsk_') && !k.startsWith('sk-') && !k.startsWith('ghp_') && !k.startsWith('github_pat_'))) ||
         (settings?.geminiApiKey && !settings.geminiApiKey.startsWith('gsk_') && !settings.geminiApiKey.startsWith('sk-') && !settings.geminiApiKey.startsWith('ghp_') && !settings.geminiApiKey.startsWith('github_pat_') ? settings.geminiApiKey : '')
@@ -741,24 +744,41 @@ export function initializeIpcHandlers(window: BrowserWindow): void {
 
       const preferredVision = settings?.visionProvider || 'gemini'
       interface VisionAttempt {
-        provider: 'gemini' | 'openai'
+        provider: 'groq' | 'gemini' | 'openai'
         key: string
         model: string
       }
       const attempts: VisionAttempt[] = []
-      const validOpenaiKey = openaiKey || ''
+      const validGroqKey = groqKey || ''
       const validGeminiKey = geminiKey || ''
+      const validOpenaiKey = openaiKey || ''
 
-      if (preferredVision === 'openai') {
-        if (validOpenaiKey) attempts.push({ provider: 'openai', key: validOpenaiKey, model: settings?.openaiModel || 'gpt-4o-mini' })
-        if (validGeminiKey) attempts.push({ provider: 'gemini', key: validGeminiKey, model: settings?.geminiModel || 'gemini-3.8-flash' })
+      const groqAttempt: VisionAttempt | null = validGroqKey
+        ? { provider: 'groq', key: validGroqKey, model: settings?.groqModel || 'qwen/qwen3.8-27b' }
+        : null
+      const geminiAttempt: VisionAttempt | null = validGeminiKey
+        ? { provider: 'gemini', key: validGeminiKey, model: settings?.geminiModel || 'gemini-3.8-flash' }
+        : null
+      const openaiAttempt: VisionAttempt | null = validOpenaiKey
+        ? { provider: 'openai', key: validOpenaiKey, model: settings?.openaiModel || 'gpt-4o-mini' }
+        : null
+
+      if (preferredVision === 'groq') {
+        if (groqAttempt) attempts.push(groqAttempt)
+        if (geminiAttempt) attempts.push(geminiAttempt)
+        if (openaiAttempt) attempts.push(openaiAttempt)
+      } else if (preferredVision === 'openai') {
+        if (openaiAttempt) attempts.push(openaiAttempt)
+        if (groqAttempt) attempts.push(groqAttempt)
+        if (geminiAttempt) attempts.push(geminiAttempt)
       } else {
-        if (validGeminiKey) attempts.push({ provider: 'gemini', key: validGeminiKey, model: settings?.geminiModel || 'gemini-3.8-flash' })
-        if (validOpenaiKey) attempts.push({ provider: 'openai', key: validOpenaiKey, model: settings?.openaiModel || 'gpt-4o-mini' })
+        if (geminiAttempt) attempts.push(geminiAttempt)
+        if (groqAttempt) attempts.push(groqAttempt)
+        if (openaiAttempt) attempts.push(openaiAttempt)
       }
 
       if (attempts.length === 0) {
-        const errorMsg = 'Screenshot solving requires a vision-capable AI model. Please add a Google Gemini key or OpenAI / ChatGPT key in Settings.'
+        const errorMsg = 'Screenshot solving requires a vision-capable AI model. Please add a Groq key (Qwen 3.8 27B LPU), Google Gemini key, or OpenAI key in Settings.'
         mainWindow?.webContents.send('answer-error', errorMsg)
         return {
           success: false,

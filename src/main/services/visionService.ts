@@ -1,5 +1,6 @@
 import OpenAI from 'openai'
 import { GoogleGenAI } from '@google/genai'
+import { compressBase64Image } from './imageCompressor'
 
 export interface VisionAnalysisResult {
   isQuestion: boolean
@@ -14,7 +15,7 @@ export interface VisionServiceConfig {
 }
 
 /**
- * Service to analyze screenshots for interview questions using OpenAI / Gemini Vision API
+ * Service to analyze screenshots for interview questions using Groq / OpenAI / Gemini Vision API
  */
 export class VisionService {
   private client: OpenAI | null = null
@@ -23,9 +24,15 @@ export class VisionService {
   constructor(config: VisionServiceConfig) {
     this.config = config
     const key = config.apiKey?.trim() || ''
+    const isGroq = key.startsWith('gsk_')
     const isGitHub = key.startsWith('ghp_') || key.startsWith('github_pat_')
     const isOpenAI = key.startsWith('sk-')
-    if (isGitHub || isOpenAI) {
+    if (isGroq) {
+      this.client = new OpenAI({
+        apiKey: key,
+        baseURL: 'https://api.groq.com/openai/v1'
+      })
+    } else if (isGitHub || isOpenAI) {
       this.client = new OpenAI({
         apiKey: key,
         baseURL: isGitHub ? 'https://models.inference.ai.azure.com' : undefined
@@ -41,19 +48,19 @@ export class VisionService {
   async analyzeScreenshot(imageBase64: string): Promise<VisionAnalysisResult> {
     try {
       const key = this.config.apiKey?.trim() || ''
-      if (key.startsWith('gsk_')) {
-        throw new Error('Groq API keys do not support image/vision analysis. Please add a free Google Gemini key or OpenAI key in Settings.')
-      }
+      const isGroq = key.startsWith('gsk_')
+      const isGemini =
+        key.startsWith('AIza') ||
+        key.startsWith('AQ.') ||
+        (!isGroq && !key.startsWith('sk-') && !key.startsWith('ghp_') && !key.startsWith('github_pat_'))
 
-      // Remove data URL prefix if present
-      const base64Data = imageBase64.includes(',') ? imageBase64.split(',')[1] : imageBase64
-      const isGemini = key.startsWith('AIza') || key.startsWith('AQ.') || (!key.startsWith('sk-') && !key.startsWith('ghp_') && !key.startsWith('github_pat_'))
+      // Compress screenshot to max 1600px JPEG to avoid payload limits and achieve fast LPU inference
+      const compressed = compressBase64Image(imageBase64)
+      const base64Data = compressed.base64 || (imageBase64.includes(',') ? imageBase64.split(',')[1] : imageBase64)
+      const mimeType = compressed.mimeType || 'image/jpeg'
+      const dataUrl = compressed.dataUrl || `data:${mimeType};base64,${base64Data}`
 
-      let content = ''
-
-      if (isGemini) {
-        const ai = new GoogleGenAI({ apiKey: key })
-        const systemPrompt = `You are an expert at analyzing screenshots to detect interview questions in real-time. 
+      const systemPrompt = `You are an expert at analyzing screenshots to detect interview questions in real-time. 
 Your task is to determine if the screenshot contains ANY of the following:
 1. A coding or algorithm problem (LeetCode, HackerRank, data structures, programming challenges)
 2. A system design or architecture question
@@ -72,6 +79,72 @@ You MUST respond ONLY with valid JSON in this exact format:
   "confidence": 0.0-1.0
 }`
 
+      let content = ''
+
+      if (isGroq) {
+        // Groq LPU multimodal vision (Qwen 3.8 27B / Llama 3.2 Vision)
+        const groqVisionModel =
+          this.config.model &&
+          !this.config.model.includes('llama-3.1') &&
+          !this.config.model.includes('gpt-oss')
+            ? this.config.model
+            : 'qwen/qwen3.8-27b'
+
+        let response: any
+        try {
+          response = await this.client!.chat.completions.create({
+            model: groqVisionModel,
+            messages: [
+              {
+                role: 'user',
+                content: [
+                  {
+                    type: 'text',
+                    text: `${systemPrompt}\n\nAnalyze this screenshot carefully. Look for any interview question, coding problem, project scenario, or test question. Respond with JSON.`
+                  },
+                  {
+                    type: 'image_url',
+                    image_url: {
+                      url: dataUrl
+                    }
+                  }
+                ]
+              }
+            ],
+            response_format: { type: 'json_object' },
+            temperature: 0.2,
+            max_completion_tokens: 1024
+          })
+        } catch (groqErr: any) {
+          console.warn(`Groq vision with ${groqVisionModel} failed (${groqErr?.message}). Trying fallback model llama-3.2-11b-vision-preview...`)
+          response = await this.client!.chat.completions.create({
+            model: 'llama-3.2-11b-vision-preview',
+            messages: [
+              {
+                role: 'user',
+                content: [
+                  {
+                    type: 'text',
+                    text: `${systemPrompt}\n\nAnalyze this screenshot carefully. Look for any interview question, coding problem, project scenario, or test question. Respond with JSON.`
+                  },
+                  {
+                    type: 'image_url',
+                    image_url: {
+                      url: dataUrl
+                    }
+                  }
+                ]
+              }
+            ],
+            response_format: { type: 'json_object' },
+            temperature: 0.2,
+            max_completion_tokens: 1024
+          })
+        }
+
+        content = response.choices[0]?.message?.content || ''
+      } else if (isGemini) {
+        const ai = new GoogleGenAI({ apiKey: key })
         const requestPayload = {
           contents: [
             {
@@ -82,7 +155,7 @@ You MUST respond ONLY with valid JSON in this exact format:
                 },
                 {
                   inlineData: {
-                    mimeType: 'image/png',
+                    mimeType: mimeType,
                     data: base64Data
                   }
                 }
@@ -140,24 +213,7 @@ You MUST respond ONLY with valid JSON in this exact format:
           messages: [
             {
               role: 'system',
-              content: `You are an expert at analyzing screenshots to detect interview questions in real-time. 
-Your task is to determine if the screenshot contains ANY of the following:
-1. A coding or algorithm problem (LeetCode, HackerRank, data structures, programming challenges)
-2. A system design or architecture question
-3. A scenario, project-based question, or situational/behavioral engineering problem (e.g., "QUESTION X OF Y - PROJECT", incident response, debugging, database queries)
-4. A multiple-choice question (MCQ), quiz, or assessment test question with options
-5. Any technical, engineering, or job interview question displayed on a testing platform
-
-IMPORTANT: Be lenient in detection. If you see ANY question, prompt, coding challenge, project scenario, or test question from an interview platform, set isQuestion to true.
-Extract the FULL question text along with any options, choices, or scenario details.
-
-You MUST respond ONLY with valid JSON in this exact format:
-{
-  "isQuestion": true/false,
-  "questionText": "full question text and any visible options/context if detected, otherwise empty string",
-  "questionType": "leetcode" | "system-design" | "other",
-  "confidence": 0.0-1.0
-}`
+              content: systemPrompt
             },
             {
               role: 'user',
@@ -177,7 +233,7 @@ If you find ANY of these, respond with JSON where isQuestion=true and include th
                 {
                   type: 'image_url',
                   image_url: {
-                    url: `data:image/png;base64,${base64Data}`
+                    url: dataUrl
                   }
                 }
               ]

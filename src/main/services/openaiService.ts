@@ -1,6 +1,7 @@
 import { EventEmitter } from 'events'
 import OpenAI from 'openai'
 import { GoogleGenAI } from '@google/genai'
+import { compressBase64Image } from './imageCompressor'
 
 export interface Message {
   role: 'system' | 'user' | 'assistant'
@@ -22,7 +23,7 @@ export interface OpenAIConfig {
   temperature?: number
   resumeDescription?: string
   llmProvider?: 'groq' | 'gemini' | 'openai'
-  visionProvider?: 'gemini' | 'openai'
+  visionProvider?: 'gemini' | 'openai' | 'groq'
   codingLanguage?: CodingLanguage
 }
 
@@ -810,7 +811,11 @@ export class OpenAIService extends EventEmitter {
       throw new Error('No API keys configured. Please add an API key in Settings.')
     }
 
-    const base64Data = imageBase64.includes(',') ? imageBase64.split(',')[1] : imageBase64
+    const compressed = compressBase64Image(imageBase64)
+    const base64Data = compressed.base64 || (imageBase64.includes(',') ? imageBase64.split(',')[1] : imageBase64)
+    const mimeType = compressed.mimeType || 'image/jpeg'
+    const imageUrl = compressed.dataUrl || `data:image/png;base64,${base64Data}`
+
     const solutionPrompt = getSolutionSystemPrompt(
       questionType,
       this.config.resumeDescription,
@@ -846,13 +851,13 @@ If it is a project, conceptual, situational, or multiple-choice question, provid
 
       try {
         if (attempt.provider === 'groq') {
+          const client = new OpenAI({
+            apiKey: attempt.key,
+            baseURL: 'https://api.groq.com/openai/v1'
+          })
+
           // If question text was already extracted by vision, Groq can solve it directly via text (ultra fast)!
           if (questionText && questionText.trim().length > 10) {
-            const client = new OpenAI({
-              apiKey: attempt.key,
-              baseURL: 'https://api.groq.com/openai/v1'
-            })
-
             const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
               { role: 'system', content: attemptSolutionPrompt },
               { role: 'user', content: promptText }
@@ -882,8 +887,44 @@ If it is a project, conceptual, situational, or multiple-choice question, provid
               }
             }
           } else {
-            // Groq does not have a raw vision model on this project tier, let Gemini or OpenAI process the raw image
-            continue
+            // Groq multimodal vision model for raw screenshot
+            const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
+              { role: 'system', content: attemptSolutionPrompt },
+              {
+                role: 'user',
+                content: [
+                  { type: 'text', text: promptText },
+                  {
+                    type: 'image_url',
+                    image_url: { url: imageUrl }
+                  }
+                ]
+              }
+            ]
+
+            const stream = await client.chat.completions.create({
+              model: 'qwen/qwen3.8-27b',
+              messages: messages,
+              max_completion_tokens: this.config.maxTokens || 4096,
+              temperature: this.config.temperature || 0.7,
+              stream: true
+            })
+
+            try {
+              for await (const chunk of stream) {
+                const content = chunk.choices[0]?.delta?.content || ''
+                if (content) {
+                  fullResponse += content
+                  this.emit('stream', content)
+                }
+              }
+            } catch (streamErr: any) {
+              if (fullResponse.trim().length > 50 && (streamErr?.message?.includes('EOF') || streamErr?.message?.includes('stream'))) {
+                console.warn(`Groq vision stream ended with unexpected EOF, preserved response (${fullResponse.length} chars)`)
+              } else {
+                throw streamErr
+              }
+            }
           }
         } else if (attempt.provider === 'openai') {
           const isGitHub = attempt.key.startsWith('ghp_') || attempt.key.startsWith('github_pat_')
@@ -908,7 +949,7 @@ If it is a project, conceptual, situational, or multiple-choice question, provid
                 { type: 'text', text: promptText },
                 {
                   type: 'image_url',
-                  image_url: { url: `data:image/png;base64,${base64Data}` }
+                  image_url: { url: imageUrl }
                 }
               ]
 
@@ -959,7 +1000,7 @@ If it is a project, conceptual, situational, or multiple-choice question, provid
                   { text: promptText },
                   {
                     inlineData: {
-                      mimeType: 'image/png',
+                      mimeType: mimeType,
                       data: base64Data
                     }
                   }

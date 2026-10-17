@@ -26,7 +26,7 @@ export type CodingLanguage = 'cpp' | 'python' | 'java'
 export interface AppSettings {
   sttProvider?: 'groq' | 'deepgram' | 'gemini' | 'openai'
   llmProvider?: 'groq' | 'gemini' | 'openai'
-  visionProvider?: 'gemini' | 'openai'
+  visionProvider?: 'gemini' | 'openai' | 'groq'
   codingLanguage?: CodingLanguage
 
   groqApiKeys?: string[]
