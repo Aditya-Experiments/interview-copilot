@@ -8,7 +8,11 @@ export function TranscriptPanel(): React.JSX.Element {
 
   useEffect(() => {
     if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight
+      const { scrollTop, scrollHeight, clientHeight } = scrollRef.current
+      const isNearBottom = scrollHeight - scrollTop - clientHeight < 60
+      if (isNearBottom) {
+        scrollRef.current.scrollTop = scrollRef.current.scrollHeight
+      }
     }
   }, [transcripts, currentTranscript])
 

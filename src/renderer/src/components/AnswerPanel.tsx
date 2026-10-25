@@ -1,19 +1,79 @@
-import { Bot, Check, Clock, Copy, Layers, MessageSquare, Mic, Sparkles, Terminal, Zap } from 'lucide-react'
+import {
+  Bot,
+  Check,
+  ChevronsDown,
+  Clock,
+  Copy,
+  Layers,
+  MessageSquare,
+  Mic,
+  Sparkles,
+  Terminal,
+  Zap
+} from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { useInterview } from '../hooks/useInterview'
 import { MarkdownRenderer } from './MarkdownRenderer'
 
 export function AnswerPanel(): React.JSX.Element {
-  const { answers, currentAnswer, currentQuestion, currentQuestionCategory, isGenerating } =
-    useInterview()
+  const {
+    answers,
+    currentAnswer,
+    currentQuestion,
+    currentQuestionCategory,
+    isGenerating,
+    autoScrollChat,
+    setAutoScrollChat
+  } = useInterview()
   const scrollRef = useRef<HTMLDivElement>(null)
+  const isAutoScrollingRef = useRef(false)
   const [copiedId, setCopiedId] = useState<string | null>(null)
 
+  // Auto-scroll when answers or streaming chunks update (only when autoScroll is active)
   useEffect(() => {
-    if (scrollRef.current) {
+    if (!scrollRef.current) return
+
+    if (autoScrollChat) {
+      isAutoScrollingRef.current = true
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight
+      requestAnimationFrame(() => {
+        isAutoScrollingRef.current = false
+      })
     }
-  }, [answers, currentAnswer])
+  }, [answers, currentAnswer, autoScrollChat])
+
+  // Detect user scroll intent (Parakeet AI standard: pause when reading earlier content)
+  const handleScroll = (): void => {
+    if (!scrollRef.current) return
+    if (isAutoScrollingRef.current) return
+
+    const { scrollTop, scrollHeight, clientHeight } = scrollRef.current
+    const distanceFromBottom = scrollHeight - scrollTop - clientHeight
+
+    // User scrolled up away from the bottom: pause auto-scroll so they can read in peace
+    if (distanceFromBottom > 80) {
+      if (autoScrollChat) {
+        setAutoScrollChat(false)
+      }
+    } else if (distanceFromBottom <= 20) {
+      // User scrolled all the way back to the live bottom: re-engage auto-scroll
+      if (!autoScrollChat) {
+        setAutoScrollChat(true)
+      }
+    }
+  }
+
+  // Toggle button clicked at top center
+  const handleToggleAutoScroll = (): void => {
+    const nextState = !autoScrollChat
+    setAutoScrollChat(nextState)
+    if (nextState && scrollRef.current) {
+      scrollRef.current.scrollTo({
+        top: scrollRef.current.scrollHeight,
+        behavior: 'smooth'
+      })
+    }
+  }
 
   const copyToClipboard = async (text: string, id: string): Promise<void> => {
     try {
@@ -110,8 +170,50 @@ export function AnswerPanel(): React.JSX.Element {
   const hasContent = answers.length > 0 || currentAnswer
 
   return (
-    <div className="flex-1 flex flex-col min-h-0 bg-dark-900/30">
-      <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-3 space-y-4 custom-scrollbar">
+    <div className="flex-1 flex flex-col min-h-0 bg-dark-900/30 relative">
+      {/* Top Center Auto-Scroll Toggle Button (Parakeet AI standard) */}
+      <div className="absolute top-2 left-1/2 -translate-x-1/2 z-20 pointer-events-auto">
+        <button
+          type="button"
+          data-interactive="true"
+          onClick={handleToggleAutoScroll}
+          className={`group flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-medium transition-all duration-200 backdrop-blur-md shadow-lg select-none cursor-pointer border ${
+            autoScrollChat
+              ? 'bg-dark-900/85 hover:bg-dark-800/95 text-emerald-300 border-emerald-500/30 hover:border-emerald-500/60 shadow-black/40'
+              : 'bg-amber-950/90 hover:bg-amber-900/95 text-amber-200 border-amber-500/50 hover:border-amber-500/70 shadow-amber-950/40 ring-1 ring-amber-500/20'
+          }`}
+          title={
+            autoScrollChat
+              ? 'Auto-Scroll ON: View follows new answers in real-time. Click to pause scroll.'
+              : 'Auto-Scroll PAUSED: View locked. Click to resume auto-scroll & jump to latest answer.'
+          }
+        >
+          {autoScrollChat ? (
+            <>
+              <span className="relative flex h-2 w-2">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+              </span>
+              <span className="font-semibold tracking-wide">Auto-Scroll ON</span>
+              <ChevronsDown size={13} className="text-emerald-400 group-hover:translate-y-0.5 transition-transform" />
+            </>
+          ) : (
+            <>
+              <span className="h-2 w-2 rounded-full bg-amber-400 ring-2 ring-amber-400/30"></span>
+              <span className="font-semibold tracking-wide text-amber-300">Auto-Scroll PAUSED</span>
+              <span className="flex items-center gap-0.5 text-[10px] font-bold text-amber-100 bg-amber-500/30 px-1.5 py-0.2 rounded-full">
+                Jump ↓
+              </span>
+            </>
+          )}
+        </button>
+      </div>
+
+      <div
+        ref={scrollRef}
+        onScroll={handleScroll}
+        className="flex-1 overflow-y-auto pt-9 px-4 pb-3 space-y-4 custom-scrollbar"
+      >
         {!hasContent ? (
           <div className="flex flex-col items-center justify-center h-full text-center py-8">
             <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary mb-3 shadow-md shadow-blue-500/20">

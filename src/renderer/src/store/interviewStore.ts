@@ -66,6 +66,9 @@ interface InterviewState {
   // Click-through / ghost mode (answers & live transcripts untouchable)
   isClickThrough: boolean
 
+  // Chat auto-scroll toggle (Parakeet AI standard)
+  autoScrollChat: boolean
+
   // Transcripts
   transcripts: TranscriptEntry[]
   currentTranscript: string
@@ -127,6 +130,10 @@ interface InterviewState {
   setClickThrough: (value: boolean) => void
   toggleClickThrough: () => void
 
+  // Chat auto-scroll actions
+  setAutoScrollChat: (enabled: boolean) => void
+  toggleAutoScrollChat: () => void
+
   // Developer mode live logs actions
   setShowDevLogs: (show: boolean) => void
   addLog: (log: AppLogEntry) => void
@@ -173,6 +180,7 @@ export const useInterviewStore = create<InterviewState>((set, get) => ({
   isGenerating: false,
   isProcessingScreenshot: false,
   isClickThrough: false,
+  autoScrollChat: true,
 
   transcripts: [],
   currentTranscript: '',
@@ -204,6 +212,9 @@ export const useInterviewStore = create<InterviewState>((set, get) => ({
 
   setClickThrough: (value) => set({ isClickThrough: value }),
   toggleClickThrough: () => set((state) => ({ isClickThrough: !state.isClickThrough })),
+
+  setAutoScrollChat: (enabled) => set({ autoScrollChat: enabled }),
+  toggleAutoScrollChat: () => set((state) => ({ autoScrollChat: !state.autoScrollChat })),
 
   setShowDevLogs: (show) => set({ showDevLogs: show }),
   addLog: (log) =>
@@ -297,7 +308,14 @@ export const useInterviewStore = create<InterviewState>((set, get) => ({
     }
   },
 
-  clearAnswers: () => set({ answers: [], currentAnswer: '', currentQuestion: '' }),
+  clearAnswers: () =>
+    set({
+      answers: [],
+      currentAnswer: '',
+      currentQuestion: '',
+      currentQuestionCategory: undefined,
+      autoScrollChat: true
+    }),
 
   setSettings: (settings) => set({ settings }),
 
@@ -342,6 +360,8 @@ export const useInterviewStore = create<InterviewState>((set, get) => ({
       answers: [],
       currentAnswer: '',
       currentQuestion: '',
+      currentQuestionCategory: undefined,
+      autoScrollChat: true,
       error: null
     })
 }))

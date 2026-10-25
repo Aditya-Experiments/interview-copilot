@@ -23,6 +23,9 @@ export interface UseInterviewReturn {
   error: string | null
   audioSource: AudioSource
   isSessionActive: boolean
+  autoScrollChat: boolean
+  setAutoScrollChat: (enabled: boolean) => void
+  toggleAutoScrollChat: () => void
   startInterview: (source?: AudioSource) => Promise<void>
   stopInterview: () => Promise<void>
   clearHistory: () => Promise<void>
@@ -50,6 +53,9 @@ export function useInterview(): UseInterviewReturn {
     settings,
     error,
     isSessionActive,
+    autoScrollChat,
+    setAutoScrollChat,
+    toggleAutoScrollChat,
     setCapturing,
     setError,
     setProcessingScreenshot,
@@ -145,6 +151,9 @@ export function useInterview(): UseInterviewReturn {
     error: error || audioError,
     audioSource,
     isSessionActive,
+    autoScrollChat,
+    setAutoScrollChat,
+    toggleAutoScrollChat,
 
     // Actions
     startInterview,
